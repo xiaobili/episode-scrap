@@ -7,6 +7,7 @@ import type { MediaFile } from '@/types'
 const props = withDefaults(
   defineProps<{
     files: MediaFile[]
+    allFiles?: MediaFile[]
     selected: number[]
     selectable?: boolean
     showSource?: boolean
@@ -20,20 +21,23 @@ const emit = defineEmits<{
 }>()
 
 const selectedSet = computed(() => new Set(props.selected))
-const pageIds = computed(() => props.files.map((file) => file.id))
+const selectableIds = computed(() => (props.allFiles ?? props.files).map((file) => file.id))
 const allChecked = computed(
-  () => pageIds.value.length > 0 && pageIds.value.every((id) => selectedSet.value.has(id)),
+  () =>
+    selectableIds.value.length > 0 &&
+    selectableIds.value.every((id) => selectedSet.value.has(id)),
 )
 const partial = computed(
-  () => !allChecked.value && pageIds.value.some((id) => selectedSet.value.has(id)),
+  () =>
+    !allChecked.value && selectableIds.value.some((id) => selectedSet.value.has(id)),
 )
 
 function toggleAll() {
   if (allChecked.value) {
-    const keep = new Set(pageIds.value)
+    const keep = new Set(selectableIds.value)
     emit('update:selected', props.selected.filter((id) => !keep.has(id)))
   } else {
-    emit('update:selected', Array.from(new Set([...props.selected, ...pageIds.value])))
+    emit('update:selected', Array.from(new Set([...props.selected, ...selectableIds.value])))
   }
 }
 
@@ -87,7 +91,7 @@ function episodeLabel(file: MediaFile): string {
               class="h-4 w-4 accent-accent"
               :checked="allChecked"
               :indeterminate.prop="partial"
-              aria-label="全选当前列表"
+              aria-label="全选全部文件"
               @change="toggleAll"
             />
           </th>

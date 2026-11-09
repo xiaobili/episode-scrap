@@ -132,7 +132,9 @@ async def match_files(
 
     try:
         for media in files:
-            season_no = payload.season or media.parsed_season
+            season_no = (
+                media.parsed_season if media.parsed_season is not None else payload.season
+            )
             episode_no = media.parsed_episode
             base = MatchItemOut(
                 file_id=media.id or 0,

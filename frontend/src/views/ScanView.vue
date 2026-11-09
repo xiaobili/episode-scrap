@@ -8,7 +8,9 @@ import DataSourceSwitch from '@/components/DataSourceSwitch.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorBanner from '@/components/ErrorBanner.vue'
 import FileTable from '@/components/FileTable.vue'
+import Pager from '@/components/Pager.vue'
 import PathPicker from '@/components/PathPicker.vue'
+import { usePagination } from '@/composables/usePagination'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
 import type { MediaFile, ScanResponse } from '@/types'
@@ -39,6 +41,12 @@ const stats = computed(() => ({
   video: store.videoFiles.length,
   other: store.files.length - store.videoFiles.length,
 }))
+
+const { page, pageSize, total, pageCount, pageItems } = usePagination(visibleFiles)
+
+watch([keyword, onlyVideo], () => {
+  page.value = 1
+})
 
 function messageOf(err: unknown) {
   return err instanceof Error ? err.message : '请求失败'
@@ -191,7 +199,8 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
         <FileTable
           v-else-if="visibleFiles.length"
-          :files="visibleFiles"
+          :files="pageItems"
+          :all-files="visibleFiles"
           :selected="store.selectedIds"
           show-parsed
           show-source
@@ -216,6 +225,14 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
           icon="filter"
           title="没有匹配的文件"
           description="当前筛选条件下没有结果，试试关闭「仅看视频」或清空关键词。"
+        />
+
+        <Pager
+          v-if="!store.scanning && visibleFiles.length"
+          v-model:page="page"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-count="pageCount"
         />
       </div>
     </section>

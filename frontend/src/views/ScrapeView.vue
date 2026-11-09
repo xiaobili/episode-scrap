@@ -7,11 +7,13 @@ import AppIcon from '@/components/AppIcon.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import EpisodeMapper from '@/components/EpisodeMapper.vue'
 import ErrorBanner from '@/components/ErrorBanner.vue'
+import Pager from '@/components/Pager.vue'
 import ShowCard from '@/components/ShowCard.vue'
 import StatusTag from '@/components/StatusTag.vue'
+import { usePagination } from '@/composables/usePagination'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
-import type { Show, ShowDetail } from '@/types'
+import type { Episode, Show, ShowDetail } from '@/types'
 
 const store = useWorkflowStore()
 const router = useRouter()
@@ -24,12 +26,14 @@ const searching = ref(false)
 const searched = ref(false)
 const chosen = ref<Show | null>(null)
 const detail = ref<ShowDetail | null>(null)
+const episodesBySeason = ref<Record<number, Episode[]>>({})
 const detailLoading = ref(false)
 const season = ref<number | null>(null)
 const matching = ref(false)
 const error = ref('')
 
 const parsedFiles = computed(() => store.parsedFiles)
+const { page, pageSize, total, pageCount, pageItems } = usePagination(parsedFiles)
 const providers = computed(() => store.providers)
 const configured = computed(
   () => providers.value.find((item) => item.name === provider.value)?.configured ?? false,
@@ -41,17 +45,19 @@ const targetFiles = computed(() => {
 })
 
 const seasons = computed(() => detail.value?.seasons ?? [])
-const episodes = computed(
-  () => seasons.value.find((item) => item.season === season.value)?.episodes ?? [],
+const episodes = computed(() =>
+  season.value === null ? [] : (episodesBySeason.value[season.value] ?? []),
 )
 
-const mappingCount = computed(() => {
-  const set = new Set(episodes.value.map((item) => item.episode))
-  return targetFiles.value.filter((file) => {
-    const value = file.parsed?.episode
-    return value !== null && value !== undefined && set.has(value)
-  }).length
-})
+const mappingCount = computed(() =>
+  targetFiles.value.filter((file) => {
+    const parsed = file.parsed
+    if (!parsed || parsed.episode === null || parsed.episode === undefined) return false
+    const seasonNo = parsed.season ?? season.value ?? 1
+    const list = episodesBySeason.value[seasonNo] ?? []
+    return list.some((item) => item.episode === parsed.episode)
+  }).length,
+)
 
 function messageOf(err: unknown) {
   return err instanceof Error ? err.message : '请求失败'
@@ -89,10 +95,28 @@ async function choose(show: Show) {
       base.seasons[0]?.season ??
       1
     season.value = nextSeason
-    detail.value = await api.getShow(provider.value, show.id, nextSeason)
+
+    const numbers = new Set<number>([nextSeason])
+    for (const file of targetFiles.value) {
+      if (file.parsed?.season !== null && file.parsed?.season !== undefined) {
+        numbers.add(file.parsed.season)
+      }
+    }
+    const wanted = [...numbers].sort((a, b) => a - b)
+    const details = await Promise.all(
+      wanted.map((value) => api.getShow(provider.value, show.id, value)),
+    )
+    const map: Record<number, Episode[]> = {}
+    wanted.forEach((value, index) => {
+      map[value] =
+        details[index].seasons.find((item) => item.season === value)?.episodes ?? []
+    })
+    episodesBySeason.value = map
+    detail.value = details[0] ?? base
   } catch (err) {
     error.value = messageOf(err)
     detail.value = null
+    episodesBySeason.value = {}
   } finally {
     detailLoading.value = false
   }
@@ -100,10 +124,17 @@ async function choose(show: Show) {
 
 async function loadSeason() {
   if (!chosen.value || season.value === null) return
+  const seasonNo = season.value
+  if (seasonNo in episodesBySeason.value) return
   detailLoading.value = true
   error.value = ''
   try {
-    detail.value = await api.getShow(provider.value, chosen.value.id, season.value)
+    const result = await api.getShow(provider.value, chosen.value.id, seasonNo)
+    episodesBySeason.value = {
+      ...episodesBySeason.value,
+      [seasonNo]: result.seasons.find((item) => item.season === seasonNo)?.episodes ?? [],
+    }
+    detail.value = result
   } catch (err) {
     error.value = messageOf(err)
   } finally {
@@ -234,7 +265,7 @@ onMounted(() => {
         </div>
         <div class="max-h-[calc(100vh-300px)] overflow-y-auto">
           <div
-            v-for="file in parsedFiles"
+            v-for="file in pageItems"
             :key="file.id"
             class="flex h-12 cursor-pointer items-center gap-2 border-b border-line/50 px-3 transition last:border-0"
             :class="
@@ -266,6 +297,14 @@ onMounted(() => {
             <StatusTag :status="file.status" />
           </div>
         </div>
+
+        <Pager
+          v-if="parsedFiles.length"
+          v-model:page="page"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-count="pageCount"
+        />
       </section>
 
       <section class="panel overflow-hidden">
@@ -352,7 +391,7 @@ onMounted(() => {
             <EpisodeMapper
               v-if="episodes.length"
               :files="targetFiles"
-              :episodes="episodes"
+              :episodes-by-season="episodesBySeason"
               :season="season"
             />
             <div v-else-if="detailLoading" class="space-y-2 p-3">

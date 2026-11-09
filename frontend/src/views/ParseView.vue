@@ -6,6 +6,8 @@ import AppIcon from '@/components/AppIcon.vue'
 import ConfidenceBadge from '@/components/ConfidenceBadge.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorBanner from '@/components/ErrorBanner.vue'
+import Pager from '@/components/Pager.vue'
+import { usePagination } from '@/composables/usePagination'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
 import type { MediaFile } from '@/types'
@@ -70,6 +72,23 @@ const filtered = computed(() => {
 
 const active = computed(() => files.value.find((file) => file.id === activeId.value) ?? null)
 const activeIndex = computed(() => filtered.value.findIndex((file) => file.id === activeId.value))
+
+const { page, pageSize, total, pageCount, pageItems } = usePagination(filtered)
+
+watch(filter, () => {
+  page.value = 1
+})
+
+watch(activeId, () => {
+  const index = filtered.value.findIndex((file) => file.id === activeId.value)
+  if (index >= 0) page.value = Math.floor(index / pageSize.value) + 1
+})
+
+watch(page, () => {
+  if (!pageItems.value.some((file) => file.id === activeId.value) && pageItems.value[0]) {
+    activeId.value = pageItems.value[0].id
+  }
+})
 
 const titleInvalid = computed(() => !draft.value.title.trim())
 const seasonInvalid = computed(() => draft.value.season !== '' && !/^\d+$/.test(draft.value.season))
@@ -316,7 +335,7 @@ const tabs: { key: FilterKey; label: string }[] = [
 
         <div class="max-h-[calc(100vh-260px)] overflow-y-auto">
           <button
-            v-for="file in filtered"
+            v-for="file in pageItems"
             :key="file.id"
             class="flex h-12 w-full items-center gap-2.5 border-b border-line/50 px-3 text-left transition last:border-0"
             :class="
@@ -343,6 +362,14 @@ const tabs: { key: FilterKey; label: string }[] = [
             该筛选下暂无文件
           </p>
         </div>
+
+        <Pager
+          v-if="filtered.length"
+          v-model:page="page"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-count="pageCount"
+        />
       </section>
 
       <section v-if="active" class="panel overflow-hidden">

@@ -6,7 +6,7 @@ import type { Episode, MediaFile } from '@/types'
 
 const props = defineProps<{
   files: MediaFile[]
-  episodes: Episode[]
+  episodesBySeason: Record<number, Episode[]>
   season: number | null
 }>()
 
@@ -22,20 +22,22 @@ const rows = computed<Row[]>(() =>
   props.files.map((file) => {
     const parsed = file.parsed
     const localEpisode = parsed?.episode ?? null
+    const seasonNo = parsed?.season ?? props.season ?? 1
+    const episodes = props.episodesBySeason[seasonNo] ?? []
     const episode =
       localEpisode === null
         ? undefined
-        : props.episodes.find((item) => item.episode === localEpisode)
+        : episodes.find((item) => item.episode === localEpisode)
     const local =
       parsed && localEpisode !== null
-        ? `S${String(parsed.season ?? props.season ?? 1).padStart(2, '0')}E${String(localEpisode).padStart(2, '0')}`
+        ? `S${String(seasonNo).padStart(2, '0')}E${String(localEpisode).padStart(2, '0')}`
         : '未知集'
     return {
       fileId: file.id,
       name: file.original_name,
       local,
       target: episode
-        ? `S${String(props.season ?? 1).padStart(2, '0')}E${String(episode.episode).padStart(2, '0')}${episode.title ? ` · ${episode.title}` : ''}`
+        ? `S${String(seasonNo).padStart(2, '0')}E${String(episode.episode).padStart(2, '0')}${episode.title ? ` · ${episode.title}` : ''}`
         : null,
       ok: Boolean(episode),
     }

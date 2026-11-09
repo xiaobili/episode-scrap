@@ -8,9 +8,11 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DiffText from '@/components/DiffText.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorBanner from '@/components/ErrorBanner.vue'
+import Pager from '@/components/Pager.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import TaskProgress from '@/components/TaskProgress.vue'
 import TemplateEditor from '@/components/TemplateEditor.vue'
+import { usePagination } from '@/composables/usePagination'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
 
@@ -47,6 +49,8 @@ const chosenItems = computed(() =>
   readyItems.value.filter((item) => includeIds.value.includes(item.file_id)),
 )
 
+const { page, pageSize, total, pageCount, pageItems } = usePagination(items)
+
 watch(
   () => store.settings?.rename_template,
   (value) => {
@@ -58,6 +62,7 @@ watch(
 watch(
   preview,
   (value) => {
+    page.value = 1
     if (value) {
       includeIds.value = value.items
         .filter((item) => item.status === 'ready')
@@ -325,7 +330,7 @@ onBeforeUnmount(disconnect)
             </thead>
             <tbody>
               <tr
-                v-for="item in items"
+                v-for="item in pageItems"
                 :key="item.file_id"
                 class="h-11 border-b border-line/60 last:border-0"
                 :class="item.status === 'conflict' ? 'bg-[rgba(245,184,73,.07)]' : ''"
@@ -358,6 +363,14 @@ onBeforeUnmount(disconnect)
             </tbody>
           </table>
         </div>
+
+        <Pager
+          v-if="preview && items.length"
+          v-model:page="page"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-count="pageCount"
+        />
       </section>
 
       <div class="mt-4 flex items-center justify-between gap-2">

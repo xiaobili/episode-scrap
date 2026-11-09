@@ -28,6 +28,23 @@ def handler(request: httpx.Request) -> httpx.Response:
                 ]
             },
         )
+    if path.endswith("/season/2"):
+        return httpx.Response(
+            200,
+            json={
+                "season_number": 2,
+                "name": "第 2 季",
+                "episodes": [
+                    {
+                        "episode_number": 1,
+                        "name": "第二季第一集",
+                        "overview": "新一季。",
+                        "air_date": "2009-01-01",
+                        "still_path": None,
+                    }
+                ],
+            },
+        )
     if path.endswith("/season/1"):
         return httpx.Response(
             200,
@@ -158,6 +175,73 @@ async def test_match_endpoint(client, monkeypatch):
         assert match.episode == 2
         updated = session.get(MediaFile, media_id)
         assert updated.status == "matched"
+
+
+async def test_match_uses_each_files_own_season(client, monkeypatch):
+    with Session(engine) as session:
+        row = session.get(Setting, "tmdb_api_key")
+        if row:
+            row.value = encrypt("test-key")
+        else:
+            session.add(Setting(key="tmdb_api_key", value=encrypt("test-key")))
+        first = MediaFile(
+            source_type="local",
+            source_ref="/tmp/library/Show.S01E01.mkv",
+            original_name="Show.S01E01.mkv",
+            is_video=True,
+            parsed_title="绝命毒师",
+            parsed_season=1,
+            parsed_episode=1,
+            confidence=90,
+            status="parsed",
+        )
+        second = MediaFile(
+            source_type="local",
+            source_ref="/tmp/library/Show.S02E01.mkv",
+            original_name="Show.S02E01.mkv",
+            is_video=True,
+            parsed_title="绝命毒师",
+            parsed_season=2,
+            parsed_episode=1,
+            confidence=90,
+            status="parsed",
+        )
+        fallback = MediaFile(
+            source_type="local",
+            source_ref="/tmp/library/Show.02.mp4",
+            original_name="Show.02.mp4",
+            is_video=True,
+            parsed_title="绝命毒师",
+            parsed_season=None,
+            parsed_episode=2,
+            confidence=90,
+            status="parsed",
+        )
+        session.add_all([first, second, fallback])
+        session.commit()
+        for media in (first, second, fallback):
+            session.refresh(media)
+        ids = [first.id, second.id, fallback.id]
+
+    monkeypatch.setattr(
+        scrape_api,
+        "get_provider",
+        lambda name, key: TMDBProvider("key", transport=httpx.MockTransport(handler)),
+    )
+
+    response = await client.post(
+        "/api/match",
+        json={"file_ids": ids, "provider": "tmdb", "show_id": "1396", "season": 1},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    seasons = {item["file_id"]: item["season"] for item in data["matched"]}
+    assert seasons == {ids[0]: 1, ids[1]: 2, ids[2]: 1}
+
+    with Session(engine) as session:
+        matches = session.exec(select(ScrapeMatch).where(ScrapeMatch.file_id.in_(ids))).all()
+        stored = {match.file_id: match.season for match in matches}
+        assert stored == {ids[0]: 1, ids[1]: 2, ids[2]: 1}
 
 
 async def test_match_missing_episode(client, monkeypatch):
