@@ -29,7 +29,7 @@ def parse_files(
     files = session.exec(stmt).all()
 
     for media in files:
-        info = parser.parse(media.original_name)
+        info = parser.parse(media.original_name, path=media.source_ref)
         media.parsed_title = info.title
         media.parsed_year = info.year
         media.parsed_season = info.season

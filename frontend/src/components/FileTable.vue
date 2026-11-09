@@ -67,10 +67,12 @@ function formatDate(value: string | null): string {
 }
 
 function episodeLabel(file: MediaFile): string {
-  if (!file.parsed) return '—'
+  if (!file.parsed || file.parsed.episode === null) return '—'
   const { season, episode } = file.parsed
-  if (season === null && episode === null) return '—'
-  return `S${String(season ?? 0).padStart(2, '0')}E${String(episode ?? 0).padStart(2, '0')}`
+  const episodeText = `E${String(episode).padStart(2, '0')}`
+  return season === null
+    ? episodeText
+    : `S${String(season).padStart(2, '0')}${episodeText}`
 }
 </script>
 

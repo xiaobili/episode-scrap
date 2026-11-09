@@ -219,6 +219,15 @@ async function copyName() {
   }
 }
 
+function episodeLabel(file: MediaFile): string {
+  const parsed = file.parsed
+  if (!parsed || parsed.episode === null) return file.original_name
+  const episodeText = `E${String(parsed.episode).padStart(2, '0')}`
+  return parsed.season === null
+    ? episodeText
+    : `S${String(parsed.season).padStart(2, '0')}${episodeText}`
+}
+
 function dotClass(file: MediaFile) {
   if (!file.parsed) return 'bg-[var(--border-strong)]'
   if (file.status === 'matched' || file.status === 'renamed') return 'bg-accent'
@@ -320,11 +329,7 @@ const tabs: { key: FilterKey; label: string }[] = [
             <span class="h-1.5 w-1.5 flex-none rounded-full" :class="dotClass(file)" />
             <span class="min-w-0 flex-1">
               <span class="block truncate font-mono text-xs text-ink">
-                {{
-                  file.parsed?.season != null && file.parsed?.episode != null
-                    ? `S${String(file.parsed.season).padStart(2, '0')}E${String(file.parsed.episode).padStart(2, '0')}`
-                    : file.original_name
-                }}
+                {{ episodeLabel(file) }}
               </span>
               <span class="block truncate text-[11px] text-faint">{{ file.parsed?.title ?? '未解析' }}</span>
             </span>
