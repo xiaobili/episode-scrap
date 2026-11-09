@@ -387,6 +387,10 @@ onBeforeUnmount(disconnect)
         <span class="text-[11.5px] text-faint">
           执行前会再次确认影响范围，执行后可在任务中心查看进度
         </span>
+        <button class="btn btn-ghost" @click="router.push('/refresh')">
+          下一步：刷新媒体库
+          <AppIcon name="arrow-right" :size="14" />
+        </button>
       </div>
     </template>
 

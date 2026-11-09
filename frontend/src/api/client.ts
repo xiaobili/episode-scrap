@@ -2,6 +2,8 @@ import axios from 'axios'
 
 import type {
   DataSource,
+  JellyfinLibrary,
+  JellyfinRefreshResult,
   MatchResponse,
   MediaFile,
   OpenListInstance,
@@ -126,6 +128,19 @@ export const api = {
 
   updateSettings: (payload: Record<string, unknown>) =>
     http.put<Settings>('/settings', payload).then((r) => r.data),
+
+  getJellyfinLibraries: () =>
+    http.get<JellyfinLibrary[]>('/jellyfin/libraries').then((r) => r.data),
+
+  refreshJellyfinLibraries: (libraryIds: string[]) =>
+    http
+      .post<{ results: JellyfinRefreshResult[] }>('/jellyfin/refresh', {
+        library_ids: libraryIds,
+      })
+      .then((r) => r.data),
+
+  testJellyfin: () =>
+    http.post<{ ok: boolean; message: string }>('/jellyfin/test').then((r) => r.data),
 }
 
 export function wsUrl(taskId: string): string {

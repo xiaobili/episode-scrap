@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     strm_url_template: str = "{base_url}/d/{path}"
     strm_output_mode: str = "alongside"
     strm_target_dir: str = ""
+    jellyfin_url: str = ""
+    jellyfin_api_key: str = ""
 
     @property
     def allowed_path_list(self) -> list[str]:

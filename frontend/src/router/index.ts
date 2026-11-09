@@ -28,6 +28,12 @@ const router = createRouter({
       meta: { title: '重命名' },
     },
     {
+      path: '/refresh',
+      name: 'refresh',
+      component: () => import('@/views/RefreshView.vue'),
+      meta: { title: '刷新媒体库' },
+    },
+    {
       path: '/tasks',
       name: 'tasks',
       component: () => import('@/views/TasksView.vue'),

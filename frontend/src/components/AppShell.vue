@@ -30,6 +30,7 @@ const workbench = computed<NavItem[]>(() => [
   { name: 'parse', label: '解析', icon: 'parse', badge: store.stepCounts.parse },
   { name: 'scrape', label: '刮削', icon: 'scrape', badge: store.stepCounts.scrape },
   { name: 'rename', label: '重命名', icon: 'rename', badge: store.stepCounts.rename },
+  { name: 'refresh', label: '刷新', icon: 'refresh' },
 ])
 
 const secondary = computed<NavItem[]>(() => [

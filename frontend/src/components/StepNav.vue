@@ -29,6 +29,7 @@ const steps = computed(() => [
     count: store.stepCounts.rename,
     disabled: store.stepCounts.parse === 0,
   },
+  { name: 'refresh', label: '刷新', count: 0, disabled: false },
 ])
 
 const activeIndex = computed(() => {
@@ -82,7 +83,7 @@ function go(name: string, disabled: boolean) {
     </div>
 
     <div class="flex items-center gap-2 text-[13px] lg:hidden">
-      <span class="font-mono text-xs text-muted">{{ activeIndex + 1 }}/4</span>
+      <span class="font-mono text-xs text-muted">{{ activeIndex + 1 }}/{{ steps.length }}</span>
       <span class="font-medium text-ink">{{ activeStep.label }}</span>
     </div>
   </nav>

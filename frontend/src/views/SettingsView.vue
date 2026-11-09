@@ -13,7 +13,7 @@ import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
 import type { OpenListInstance, Settings, StrmRule } from '@/types'
 
-type TabKey = 'providers' | 'openlist' | 'template' | 'strm' | 'general'
+type TabKey = 'providers' | 'openlist' | 'template' | 'strm' | 'jellyfin' | 'general'
 
 const store = useWorkflowStore()
 const toast = useToast()
@@ -24,6 +24,7 @@ const tabs: { key: TabKey; label: string; icon: string }[] = [
   { key: 'openlist', label: 'OpenList', icon: 'cloud' },
   { key: 'template', label: '命名模板', icon: 'rename' },
   { key: 'strm', label: 'STRM', icon: 'file' },
+  { key: 'jellyfin', label: 'Jellyfin', icon: 'server' },
   { key: 'general', label: '通用', icon: 'settings' },
 ]
 
@@ -63,6 +64,9 @@ const strmTemplate = ref('')
 const strmMode = ref<'alongside' | 'library' | 'mirror'>('alongside')
 const strmTargetDir = ref('')
 const strmRules = ref<StrmRule[]>([])
+const jellyfinUrl = ref('')
+const jellyfinKey = ref('')
+const jellyfinTesting = ref(false)
 const hydrated = ref(false)
 
 const selected = computed(() => tabs.find((item) => item.key === tab.value))
@@ -78,6 +82,7 @@ function hydrate(settings: Settings) {
   strmMode.value = settings.strm_output_mode
   strmTargetDir.value = settings.strm_target_dir
   strmRules.value = settings.strm_rules.map((rule) => ({ ...rule }))
+  jellyfinUrl.value = settings.jellyfin_url
   hydrated.value = true
 }
 
@@ -279,6 +284,28 @@ async function saveStrm() {
     },
     'STRM 设置已保存',
   )
+}
+
+async function saveJellyfin() {
+  const payload: Record<string, unknown> = { jellyfin_url: jellyfinUrl.value.trim() }
+  if (jellyfinKey.value.trim()) payload.jellyfin_api_key = jellyfinKey.value.trim()
+  if (await saveSettings(payload, 'Jellyfin 设置已保存')) {
+    jellyfinKey.value = ''
+  }
+}
+
+async function testJellyfin() {
+  jellyfinTesting.value = true
+  error.value = ''
+  try {
+    const result = await api.testJellyfin()
+    if (result.ok) toast.success(result.message || '连接成功')
+    else toast.error(result.message || '连接失败')
+  } catch (err) {
+    toast.error(messageOf(err))
+  } finally {
+    jellyfinTesting.value = false
+  }
 }
 
 async function saveGeneral() {
@@ -614,6 +641,60 @@ onMounted(loadInstances)
                 </button>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section v-else-if="tab === 'jellyfin'" class="panel p-4 md:p-5">
+          <div class="flex flex-wrap items-start gap-2">
+            <div class="min-w-0 flex-1">
+              <h2 class="text-lg font-semibold text-ink">Jellyfin</h2>
+              <p class="mt-1 text-xs text-muted">
+                配置后可在「刷新」步骤中刷新指定的 Jellyfin 媒体库。
+              </p>
+            </div>
+            <StatusTag
+              :status="store.settings?.jellyfin_url && store.settings?.has_jellyfin_key ? 'success' : 'pending'"
+              :text="store.settings?.jellyfin_url && store.settings?.has_jellyfin_key ? '已配置' : '未配置'"
+            />
+          </div>
+
+          <div class="mt-4">
+            <label class="label">服务器地址</label>
+            <input
+              v-model="jellyfinUrl"
+              class="input font-mono text-xs"
+              placeholder="http://192.168.1.10:8096"
+              spellcheck="false"
+            />
+          </div>
+
+          <div class="mt-4">
+            <label class="label">API Key</label>
+            <input
+              v-model="jellyfinKey"
+              type="password"
+              class="input font-mono text-xs"
+              :placeholder="
+                store.settings?.has_jellyfin_key ? '已保存，输入新 Key 可覆盖' : '在 Jellyfin 控制台 → API 密钥中创建'
+              "
+              autocomplete="off"
+            />
+            <p class="mt-1.5 text-[11.5px] text-faint">
+              Key 仅保存在服务端，前端不会回显已保存的内容。
+            </p>
+          </div>
+
+          <div class="mt-5 flex items-center justify-end gap-2">
+            <button
+              class="btn"
+              :disabled="jellyfinTesting || !store.settings?.jellyfin_url || !store.settings?.has_jellyfin_key"
+              title="使用已保存的配置测试连接"
+              @click="testJellyfin"
+            >
+              <AppIcon name="refresh" :size="14" :spin="jellyfinTesting" />
+              测试连接
+            </button>
+            <button class="btn btn-primary" :disabled="saving" @click="saveJellyfin">保存设置</button>
           </div>
         </section>
 

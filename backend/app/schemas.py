@@ -329,6 +329,8 @@ class SettingsOut(BaseModel):
     strm_output_mode: str
     strm_target_dir: str
     strm_rules: list[StrmRule] = Field(default_factory=list)
+    jellyfin_url: str = ""
+    has_jellyfin_key: bool = False
 
 
 class SettingsUpdate(BaseModel):
@@ -342,3 +344,25 @@ class SettingsUpdate(BaseModel):
     strm_output_mode: Literal["alongside", "library", "mirror"] | None = None
     strm_target_dir: str | None = None
     strm_rules: list[StrmRule] | None = None
+    jellyfin_url: str | None = None
+    jellyfin_api_key: str | None = None
+
+
+class JellyfinLibraryOut(BaseModel):
+    id: str
+    name: str
+    collection_type: str | None = None
+
+
+class JellyfinRefreshRequest(BaseModel):
+    library_ids: list[str]
+
+
+class JellyfinRefreshResult(BaseModel):
+    library_id: str
+    ok: bool
+    error: str | None = None
+
+
+class JellyfinRefreshOut(BaseModel):
+    results: list[JellyfinRefreshResult]

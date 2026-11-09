@@ -1,5 +1,6 @@
 import json
 import os
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
@@ -12,9 +13,11 @@ from app.schemas import SettingsOut, SettingsUpdate
 from app.services.crypto import encrypt
 from app.services.settings import (
     get_allowed_paths,
+    get_jellyfin_url,
     get_openlist_options,
     get_rename_template,
     get_strm_options,
+    has_jellyfin_key,
     has_tmdb_key,
     set_value,
 )
@@ -36,6 +39,8 @@ def _to_out(session: Session) -> SettingsOut:
         strm_output_mode=strm["mode"],
         strm_target_dir=strm["target_dir"],
         strm_rules=strm["rules"],
+        jellyfin_url=get_jellyfin_url(session),
+        has_jellyfin_key=has_jellyfin_key(session),
     )
 
 
@@ -138,6 +143,19 @@ def update_settings(
                 }
             )
         set_value(session, "strm_rules", json.dumps(rules, ensure_ascii=False))
+
+    if payload.jellyfin_url is not None:
+        cleaned = payload.jellyfin_url.strip().rstrip("/")
+        if cleaned:
+            parsed = urlparse(cleaned)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                raise HTTPException(
+                    status_code=400, detail="Jellyfin 地址必须是合法的 http/https URL"
+                )
+        set_value(session, "jellyfin_url", cleaned)
+
+    if payload.jellyfin_api_key:
+        set_value(session, "jellyfin_api_key", encrypt(payload.jellyfin_api_key))
 
     session.commit()
     return _to_out(session)

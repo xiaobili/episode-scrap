@@ -178,6 +178,8 @@ export interface Settings {
   strm_output_mode: 'alongside' | 'library' | 'mirror'
   strm_target_dir: string
   strm_rules: StrmRule[]
+  jellyfin_url: string
+  has_jellyfin_key: boolean
 }
 
 export interface RollbackResult {
@@ -191,4 +193,16 @@ export interface Provider {
   name: string
   label: string
   configured: boolean
+}
+
+export interface JellyfinLibrary {
+  id: string
+  name: string
+  collection_type: string | null
+}
+
+export interface JellyfinRefreshResult {
+  library_id: string
+  ok: boolean
+  error: string | null
 }

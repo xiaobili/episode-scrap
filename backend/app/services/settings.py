@@ -16,6 +16,8 @@ _ALLOWED_KEYS = {
     "strm_output_mode",
     "strm_target_dir",
     "strm_rules",
+    "jellyfin_url",
+    "jellyfin_api_key",
 }
 
 
@@ -102,3 +104,20 @@ def get_tmdb_key(session: Session) -> str:
 
 def has_tmdb_key(session: Session) -> bool:
     return bool(get_tmdb_key(session))
+
+
+def get_jellyfin_url(session: Session) -> str:
+    return get_value(session, "jellyfin_url") or settings.jellyfin_url
+
+
+def get_jellyfin_key(session: Session) -> str:
+    from app.services.crypto import decrypt
+
+    encrypted = get_value(session, "jellyfin_api_key")
+    if encrypted:
+        return decrypt(encrypted)
+    return settings.jellyfin_api_key
+
+
+def has_jellyfin_key(session: Session) -> bool:
+    return bool(get_jellyfin_key(session))
