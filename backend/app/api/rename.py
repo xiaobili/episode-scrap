@@ -106,6 +106,7 @@ async def execute_rename(
         template=template,
         write_nfo=payload.write_nfo,
         download_posters=payload.download_posters,
+        write_strm=payload.write_strm,
     )
     session.add(task)
     for media, new_name in selected:

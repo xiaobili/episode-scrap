@@ -11,9 +11,9 @@ import StatusTag from '@/components/StatusTag.vue'
 import TemplateEditor from '@/components/TemplateEditor.vue'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
-import type { OpenListInstance, Settings } from '@/types'
+import type { OpenListInstance, Settings, StrmRule } from '@/types'
 
-type TabKey = 'providers' | 'openlist' | 'template' | 'general'
+type TabKey = 'providers' | 'openlist' | 'template' | 'strm' | 'general'
 
 const store = useWorkflowStore()
 const toast = useToast()
@@ -23,6 +23,7 @@ const tabs: { key: TabKey; label: string; icon: string }[] = [
   { key: 'providers', label: '媒体源', icon: 'sparkles' },
   { key: 'openlist', label: 'OpenList', icon: 'cloud' },
   { key: 'template', label: '命名模板', icon: 'rename' },
+  { key: 'strm', label: 'STRM', icon: 'file' },
   { key: 'general', label: '通用', icon: 'settings' },
 ]
 
@@ -58,6 +59,10 @@ const allowedPaths = ref('')
 const concurrency = ref(3)
 const timeout = ref(30)
 const retry = ref(0)
+const strmTemplate = ref('')
+const strmMode = ref<'alongside' | 'library' | 'mirror'>('alongside')
+const strmTargetDir = ref('')
+const strmRules = ref<StrmRule[]>([])
 const hydrated = ref(false)
 
 const selected = computed(() => tabs.find((item) => item.key === tab.value))
@@ -69,6 +74,10 @@ function hydrate(settings: Settings) {
   concurrency.value = settings.openlist_concurrency
   timeout.value = settings.openlist_timeout
   retry.value = settings.openlist_retry
+  strmTemplate.value = settings.strm_url_template
+  strmMode.value = settings.strm_output_mode
+  strmTargetDir.value = settings.strm_target_dir
+  strmRules.value = settings.strm_rules.map((rule) => ({ ...rule }))
   hydrated.value = true
 }
 
@@ -223,6 +232,53 @@ async function saveTemplate() {
     return
   }
   await saveSettings({ rename_template: templateDraft.value }, '命名模板已保存')
+}
+
+function addStrmRule() {
+  strmRules.value.push({
+    source: '',
+    target_type: 'local',
+    target_id: null,
+    target_dir: '',
+  })
+}
+
+function removeStrmRule(index: number) {
+  strmRules.value.splice(index, 1)
+}
+
+async function saveStrm() {
+  if (!strmTemplate.value.trim()) {
+    error.value = 'STRM URL 模板不能为空'
+    return
+  }
+  for (const rule of strmRules.value) {
+    if (!rule.source.trim().startsWith('/')) {
+      error.value = '规则的源路径必须以 / 开头'
+      return
+    }
+    if (!rule.target_dir.trim().startsWith('/')) {
+      error.value = '规则的目标目录必须以 / 开头'
+      return
+    }
+    if (rule.target_type === 'openlist' && !rule.target_id) {
+      error.value = '请为 OpenList 目标规则选择实例'
+      return
+    }
+  }
+  await saveSettings(
+    {
+      strm_url_template: strmTemplate.value.trim(),
+      strm_output_mode: strmMode.value,
+      strm_target_dir: strmTargetDir.value.trim(),
+      strm_rules: strmRules.value.map((rule) => ({
+        ...rule,
+        source: rule.source.trim(),
+        target_dir: rule.target_dir.trim(),
+      })),
+    },
+    'STRM 设置已保存',
+  )
 }
 
 async function saveGeneral() {
@@ -437,6 +493,127 @@ onMounted(loadInstances)
                 </tr>
               </tbody>
             </table>
+          </div>
+        </section>
+
+        <section v-else-if="tab === 'strm'" class="panel p-4 md:p-5">
+          <div class="flex flex-wrap items-start gap-2">
+            <div class="min-w-0 flex-1">
+              <h2 class="text-lg font-semibold text-ink">STRM</h2>
+              <p class="mt-1 text-xs text-muted">
+                重命名时勾选「生成 STRM」，为每个视频生成指向媒体源的 .strm 文件。
+              </p>
+            </div>
+            <button class="btn btn-primary" :disabled="saving" @click="saveStrm">保存设置</button>
+          </div>
+
+          <div class="mt-4">
+            <label class="label">URL 模板</label>
+            <input
+              v-model="strmTemplate"
+              class="input font-mono text-xs"
+              spellcheck="false"
+              placeholder="{base_url}/d/{path}"
+            />
+            <p class="mt-1.5 text-[11.5px] text-faint">
+              变量：{base_url} 数据源地址、{path} 视频路径（URL 编码）、{raw_path} 原始路径、{filename} 文件名。
+            </p>
+          </div>
+
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            <div>
+              <label class="label">输出方式</label>
+              <select v-model="strmMode" class="select h-9">
+                <option value="alongside">与视频同目录</option>
+                <option value="library">本地媒体库（剧名 / Season）</option>
+                <option value="mirror">独立目录镜像</option>
+              </select>
+            </div>
+            <div>
+              <label class="label">目标目录（绝对路径）</label>
+              <input
+                v-model="strmTargetDir"
+                class="input font-mono text-xs"
+                :disabled="strmMode === 'alongside'"
+                placeholder="/data/media/strm"
+                spellcheck="false"
+              />
+            </div>
+          </div>
+          <p class="mt-1.5 text-[11.5px] text-faint">
+            本地视频的 STRM 内容为视频绝对路径；OpenList 视频按上方 URL 模板生成。
+          </p>
+
+          <div class="mt-5 border-t border-line pt-4">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 class="text-sm font-semibold text-ink">路径映射规则</h3>
+                <p class="mt-0.5 text-[11.5px] text-faint">
+                  按源路径最长前缀匹配，命中后按相对目录结构写入目标位置（目录不存在会自动创建），未命中时使用上方默认方式。
+                </p>
+              </div>
+              <button class="btn btn-xs btn-ghost" type="button" @click="addStrmRule">
+                新增规则
+              </button>
+            </div>
+
+            <div
+              v-if="!strmRules.length"
+              class="mt-3 rounded-lg border border-dashed border-line-strong px-3 py-4 text-center text-xs text-faint"
+            >
+              暂无规则
+            </div>
+
+            <div v-else class="mt-3 space-y-2">
+              <div
+                v-for="(rule, index) in strmRules"
+                :key="index"
+                class="grid gap-2 rounded-lg border border-line p-2.5 md:grid-cols-[1.2fr_0.9fr_1.2fr_auto]"
+              >
+                <div>
+                  <label class="label">源路径前缀</label>
+                  <input
+                    v-model="rule.source"
+                    class="input font-mono text-xs"
+                    placeholder="/cloud/美剧"
+                    spellcheck="false"
+                  />
+                </div>
+                <div>
+                  <label class="label">目标</label>
+                  <select v-model="rule.target_type" class="select h-9">
+                    <option value="local">本地目录</option>
+                    <option value="openlist">OpenList</option>
+                  </select>
+                  <select
+                    v-if="rule.target_type === 'openlist'"
+                    v-model="rule.target_id"
+                    class="select mt-1.5 h-9"
+                  >
+                    <option :value="null" disabled>选择实例</option>
+                    <option v-for="instance in instances" :key="instance.id" :value="instance.id">
+                      {{ instance.name }}
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <label class="label">目标目录</label>
+                  <input
+                    v-model="rule.target_dir"
+                    class="input font-mono text-xs"
+                    placeholder="/strm/美剧"
+                    spellcheck="false"
+                  />
+                </div>
+                <button
+                  class="btn btn-xs btn-ghost self-end text-danger"
+                  type="button"
+                  @click="removeStrmRule(index)"
+                >
+                  删除
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 

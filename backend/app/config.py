@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     openlist_timeout: int = 30
     openlist_retry: int = 3
     rename_template: str = "{title} - S{season:02d}E{episode:02d} - {episode_title}"
+    strm_url_template: str = "{base_url}/d/{path}"
+    strm_output_mode: str = "alongside"
+    strm_target_dir: str = ""
 
     @property
     def allowed_path_list(self) -> list[str]:

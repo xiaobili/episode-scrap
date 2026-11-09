@@ -160,6 +160,13 @@ export interface TaskDetail extends Task {
   items: TaskItem[]
 }
 
+export interface StrmRule {
+  source: string
+  target_type: 'local' | 'openlist'
+  target_id: number | null
+  target_dir: string
+}
+
 export interface Settings {
   rename_template: string
   allowed_paths: string[]
@@ -167,6 +174,10 @@ export interface Settings {
   openlist_concurrency: number
   openlist_timeout: number
   openlist_retry: number
+  strm_url_template: string
+  strm_output_mode: 'alongside' | 'library' | 'mirror'
+  strm_target_dir: string
+  strm_rules: StrmRule[]
 }
 
 export interface RollbackResult {

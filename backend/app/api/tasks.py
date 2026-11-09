@@ -65,6 +65,7 @@ async def retry_task(task_id: str, session: Session = Depends(get_session)) -> T
         template=task.template,
         write_nfo=task.write_nfo,
         download_posters=task.download_posters,
+        write_strm=task.write_strm,
     )
     session.add(new_task)
     for item in failed_items:

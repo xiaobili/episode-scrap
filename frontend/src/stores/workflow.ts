@@ -18,6 +18,7 @@ export interface ExecuteOptions {
   template?: string
   write_nfo: boolean
   download_posters: boolean
+  write_strm: boolean
   conflict_policy: 'skip' | 'suffix'
 }
 

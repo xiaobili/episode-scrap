@@ -235,6 +235,7 @@ class RenameExecuteRequest(BaseModel):
     template: str | None = None
     write_nfo: bool = True
     download_posters: bool = False
+    write_strm: bool = False
     conflict_policy: Literal["skip", "suffix"] = "skip"
 
 
@@ -310,6 +311,13 @@ class TaskDetailOut(TaskOut):
     items: list[TaskItemOut] = Field(default_factory=list)
 
 
+class StrmRule(BaseModel):
+    source: str
+    target_type: Literal["local", "openlist"] = "local"
+    target_id: int | None = None
+    target_dir: str
+
+
 class SettingsOut(BaseModel):
     rename_template: str
     allowed_paths: list[str]
@@ -317,6 +325,10 @@ class SettingsOut(BaseModel):
     openlist_concurrency: int
     openlist_timeout: int
     openlist_retry: int
+    strm_url_template: str
+    strm_output_mode: str
+    strm_target_dir: str
+    strm_rules: list[StrmRule] = Field(default_factory=list)
 
 
 class SettingsUpdate(BaseModel):
@@ -326,3 +338,7 @@ class SettingsUpdate(BaseModel):
     openlist_concurrency: int | None = None
     openlist_timeout: int | None = None
     openlist_retry: int | None = None
+    strm_url_template: str | None = None
+    strm_output_mode: Literal["alongside", "library", "mirror"] | None = None
+    strm_target_dir: str | None = None
+    strm_rules: list[StrmRule] | None = None

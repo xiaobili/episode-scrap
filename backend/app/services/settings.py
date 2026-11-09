@@ -1,3 +1,5 @@
+import json
+
 from sqlmodel import Session, select
 
 from app.config import settings
@@ -10,6 +12,10 @@ _ALLOWED_KEYS = {
     "openlist_concurrency",
     "openlist_timeout",
     "openlist_retry",
+    "strm_url_template",
+    "strm_output_mode",
+    "strm_target_dir",
+    "strm_rules",
 }
 
 
@@ -52,6 +58,36 @@ def get_openlist_options(session: Session) -> dict[str, int]:
         "concurrency": _int("openlist_concurrency", settings.openlist_concurrency),
         "timeout": _int("openlist_timeout", settings.openlist_timeout),
         "retry": _int("openlist_retry", settings.openlist_retry),
+    }
+
+
+STRM_MODES = ("alongside", "library", "mirror")
+
+
+def get_strm_rules(session: Session) -> list[dict]:
+    raw = get_value(session, "strm_rules")
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [item for item in data if isinstance(item, dict)]
+
+
+def get_strm_options(session: Session) -> dict:
+    mode = get_value(session, "strm_output_mode") or settings.strm_output_mode
+    if mode not in STRM_MODES:
+        mode = "alongside"
+    return {
+        "template": get_value(session, "strm_url_template")
+        or settings.strm_url_template,
+        "mode": mode,
+        "target_dir": get_value(session, "strm_target_dir")
+        or settings.strm_target_dir,
+        "rules": get_strm_rules(session),
     }
 
 

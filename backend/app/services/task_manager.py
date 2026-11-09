@@ -7,10 +7,19 @@ from sqlmodel import Session, select
 
 from app.core.nfo import generate_episode_nfo
 from app.core.renamer import parent_of
+from app.core.strm import (
+    library_target,
+    match_strm_rule,
+    mirror_target,
+    render_strm,
+    rule_target_dir,
+    strm_filename,
+)
 from app.datasources.factory import get_datasource
 from app.db import engine
 from app.models import (
     MediaFile,
+    OpenListInstance,
     RenameHistory,
     ScrapeMatch,
     TaskItem,
@@ -18,6 +27,7 @@ from app.models import (
     utcnow,
 )
 from app.schemas import RollbackOut
+from app.services.settings import get_strm_options
 from app.ws import manager
 
 
@@ -40,6 +50,7 @@ class TaskManager:
 
             items = session.exec(select(TaskItem).where(TaskItem.task_id == task_id)).all()
             datasource_cache = {}
+            strm_options = get_strm_options(session) if task.write_strm else None
             for item in items:
                 media = session.get(MediaFile, item.file_id) if item.file_id else None
                 if not media:
@@ -95,8 +106,22 @@ class TaskManager:
                         except Exception as exc:  # NFO 失败不影响重命名结果
                             logger.warning("写入 NFO 失败 {}: {}", item.name, exc)
 
-                    if task.download_posters and match and match.still_url and media.source_type == "local":
+                    if task.download_posters and match and match.still_url:
                         await self._download_thumb(datasource, new_path, match.still_url, item.new_name)
+
+                    if strm_options:
+                        try:
+                            await self._write_strm(
+                                session,
+                                datasource,
+                                media,
+                                match,
+                                new_path,
+                                item.new_name or media.original_name,
+                                strm_options,
+                            )
+                        except Exception as exc:  # STRM 失败不影响重命名结果
+                            logger.warning("写入 STRM 失败 {}: {}", item.name, exc)
 
                     item.status = "success"
                     item.error = None
@@ -129,6 +154,87 @@ class TaskManager:
             await datasource.upload(parent_of(new_path), response.content, f"{stem}-thumb.jpg")
         except Exception as exc:
             logger.warning("下载剧照失败 {}: {}", url, exc)
+
+    async def _write_strm(
+        self,
+        session: Session,
+        datasource,
+        media: MediaFile,
+        match: ScrapeMatch | None,
+        new_path: str,
+        new_name: str,
+        options: dict,
+    ) -> None:
+        if media.source_type == "local":
+            content = new_path
+        else:
+            instance = (
+                session.get(OpenListInstance, media.openlist_id)
+                if media.openlist_id
+                else None
+            )
+            content = render_strm(
+                options["template"],
+                base_url=instance.base_url if instance else "",
+                path=new_path,
+            )
+        filename = strm_filename(new_name or os.path.basename(new_path))
+
+        matched = match_strm_rule(options.get("rules") or [], new_path)
+        if matched:
+            rule, rel_dir = matched
+            await self._write_rule_strm(session, rule, rel_dir, filename, content)
+            return
+
+        if options["mode"] == "alongside":
+            await datasource.upload(parent_of(new_path), content.encode("utf-8"), filename)
+            return
+
+        root = options["target_dir"]
+        if not root:
+            raise ValueError("未配置 STRM 目标目录")
+
+        target = None
+        if options["mode"] == "mirror":
+            target = mirror_target(root, media.scan_root, new_path, filename)
+        if target is None:
+            title = (match.show_title if match else None) or media.parsed_title
+            if not title:
+                raise ValueError("缺少剧名，无法确定 STRM 输出目录")
+            season = media.parsed_season or (match.season if match else None)
+            target = library_target(root, title, season, filename)
+
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "w", encoding="utf-8") as file:
+            file.write(content)
+
+    async def _write_rule_strm(
+        self,
+        session: Session,
+        rule: dict,
+        rel_dir: str,
+        filename: str,
+        content: str,
+    ) -> None:
+        target_dir = rule_target_dir(rule, rel_dir)
+        if rule.get("target_type") == "openlist":
+            datasource = get_datasource(session, "openlist", rule.get("target_id"))
+            await self._ensure_remote_dir(datasource, target_dir)
+            await datasource.upload(target_dir, content.encode("utf-8"), filename)
+            return
+
+        os.makedirs(target_dir, exist_ok=True)
+        with open(os.path.join(target_dir, filename), "w", encoding="utf-8") as file:
+            file.write(content)
+
+    @staticmethod
+    async def _ensure_remote_dir(datasource, path: str) -> None:
+        """逐级确保远端目录存在，不存在则创建。"""
+        current = "/"
+        for part in [segment for segment in path.split("/") if segment]:
+            if not await datasource.exists(current, part):
+                await datasource.mkdir(datasource.join(current, part))
+            current = datasource.join(current, part)
 
     @staticmethod
     def _payload(task: TaskRecord, item: TaskItem | None = None) -> dict:

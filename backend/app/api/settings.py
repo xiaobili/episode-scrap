@@ -1,16 +1,20 @@
+import json
 import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
 
 from app.core.renamer import TemplateError, validate_template
+from app.core.strm import StrmTemplateError, validate_strm_template
 from app.db import get_session
+from app.models import OpenListInstance
 from app.schemas import SettingsOut, SettingsUpdate
 from app.services.crypto import encrypt
 from app.services.settings import (
     get_allowed_paths,
     get_openlist_options,
     get_rename_template,
+    get_strm_options,
     has_tmdb_key,
     set_value,
 )
@@ -20,6 +24,7 @@ router = APIRouter(tags=["settings"])
 
 def _to_out(session: Session) -> SettingsOut:
     options = get_openlist_options(session)
+    strm = get_strm_options(session)
     return SettingsOut(
         rename_template=get_rename_template(session),
         allowed_paths=get_allowed_paths(session),
@@ -27,6 +32,10 @@ def _to_out(session: Session) -> SettingsOut:
         openlist_concurrency=options["concurrency"],
         openlist_timeout=options["timeout"],
         openlist_retry=options["retry"],
+        strm_url_template=strm["template"],
+        strm_output_mode=strm["mode"],
+        strm_target_dir=strm["target_dir"],
+        strm_rules=strm["rules"],
     )
 
 
@@ -74,6 +83,61 @@ def update_settings(
         if not 0 <= payload.openlist_retry <= 10:
             raise HTTPException(status_code=400, detail="OpenList 重试次数需在 0-10 之间")
         set_value(session, "openlist_retry", str(payload.openlist_retry))
+
+    if payload.strm_url_template is not None:
+        try:
+            validate_strm_template(payload.strm_url_template)
+        except StrmTemplateError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        set_value(session, "strm_url_template", payload.strm_url_template)
+
+    if payload.strm_output_mode is not None:
+        set_value(session, "strm_output_mode", payload.strm_output_mode)
+
+    if payload.strm_target_dir is not None:
+        cleaned = payload.strm_target_dir.strip()
+        if cleaned and not os.path.isabs(cleaned):
+            raise HTTPException(status_code=400, detail="STRM 目标目录必须是绝对路径")
+        set_value(
+            session, "strm_target_dir", os.path.normpath(cleaned) if cleaned else ""
+        )
+
+    if payload.strm_rules is not None:
+        rules: list[dict] = []
+        seen: set[str] = set()
+        for rule in payload.strm_rules:
+            source = os.path.normpath(rule.source.strip()).rstrip("/")
+            if not source.startswith("/"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"源路径必须是以 / 开头的绝对路径：{rule.source}",
+                )
+            if source in seen:
+                raise HTTPException(status_code=400, detail=f"源路径重复：{source}")
+            target_dir = os.path.normpath(rule.target_dir.strip()).rstrip("/") or "/"
+            if not target_dir.startswith("/"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"目标目录必须是以 / 开头的绝对路径：{rule.target_dir}",
+                )
+            if rule.target_type == "openlist":
+                if not rule.target_id or not session.get(
+                    OpenListInstance, rule.target_id
+                ):
+                    raise HTTPException(status_code=400, detail="请选择有效的 OpenList 实例")
+                target_id = rule.target_id
+            else:
+                target_id = None
+            seen.add(source)
+            rules.append(
+                {
+                    "source": source,
+                    "target_type": rule.target_type,
+                    "target_id": target_id,
+                    "target_dir": target_dir,
+                }
+            )
+        set_value(session, "strm_rules", json.dumps(rules, ensure_ascii=False))
 
     session.commit()
     return _to_out(session)

@@ -60,3 +60,82 @@ async def test_allowed_paths_roundtrip(client):
 
     invalid = await client.put("/api/settings", json={"allowed_paths": ["relative/path"]})
     assert invalid.status_code == 400
+
+
+async def test_strm_settings_roundtrip(client):
+    response = await client.put(
+        "/api/settings",
+        json={
+            "strm_url_template": "{base_url}/p/{path}",
+            "strm_output_mode": "library",
+            "strm_target_dir": "/tmp/strm-library",
+        },
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["strm_url_template"] == "{base_url}/p/{path}"
+    assert data["strm_output_mode"] == "library"
+    assert data["strm_target_dir"] == "/tmp/strm-library"
+
+
+async def test_invalid_strm_template_rejected(client):
+    response = await client.put(
+        "/api/settings", json={"strm_url_template": "{base_url}/d/"}
+    )
+    assert response.status_code == 400
+
+
+async def test_relative_strm_target_rejected(client):
+    response = await client.put(
+        "/api/settings", json={"strm_target_dir": "relative/dir"}
+    )
+    assert response.status_code == 400
+
+
+async def test_strm_rules_roundtrip(client):
+    response = await client.put(
+        "/api/settings",
+        json={
+            "strm_rules": [
+                {
+                    "source": "/cloud/美剧",
+                    "target_type": "local",
+                    "target_dir": "/media/strm/美剧",
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["strm_rules"] == [
+        {
+            "source": "/cloud/美剧",
+            "target_type": "local",
+            "target_id": None,
+            "target_dir": "/media/strm/美剧",
+        }
+    ]
+
+
+async def test_strm_rule_requires_absolute_source(client):
+    response = await client.put(
+        "/api/settings",
+        json={"strm_rules": [{"source": "cloud/美剧", "target_dir": "/strm"}]},
+    )
+    assert response.status_code == 400
+
+
+async def test_strm_rule_requires_valid_instance(client):
+    response = await client.put(
+        "/api/settings",
+        json={
+            "strm_rules": [
+                {
+                    "source": "/cloud/美剧",
+                    "target_type": "openlist",
+                    "target_id": 999999,
+                    "target_dir": "/strm/美剧",
+                }
+            ]
+        },
+    )
+    assert response.status_code == 400

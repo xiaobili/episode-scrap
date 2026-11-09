@@ -23,6 +23,7 @@ const toast = useToast()
 const template = ref('')
 const writeNfo = ref(true)
 const posters = ref(true)
+const strm = ref(false)
 const policy = ref<'skip' | 'suffix'>('skip')
 const includeIds = ref<number[]>([])
 const confirmOpen = ref(false)
@@ -121,6 +122,7 @@ async function execute() {
         template: template.value,
         write_nfo: writeNfo.value,
         download_posters: posters.value,
+        write_strm: strm.value,
         conflict_policy: policy.value,
       },
     )
@@ -260,6 +262,10 @@ onBeforeUnmount(disconnect)
               <input v-model="posters" type="checkbox" class="h-3.5 w-3.5 accent-accent" />
               下载海报
             </label>
+            <label class="flex cursor-pointer select-none items-center gap-1.5 text-xs text-muted">
+              <input v-model="strm" type="checkbox" class="h-3.5 w-3.5 accent-accent" />
+              生成 STRM
+            </label>
             <label class="flex items-center gap-1.5 text-xs text-muted">
               冲突处理
               <select v-model="policy" class="select h-7 !w-auto text-xs">
@@ -387,7 +393,7 @@ onBeforeUnmount(disconnect)
     <ConfirmDialog
       :open="confirmOpen"
       title="执行重命名"
-      :message="`将处理 ${chosenItems.length} 个文件${writeNfo ? '，并写入 NFO' : ''}。\n执行后可随时在重命名页或任务中心撤销。`"
+      :message="`将处理 ${chosenItems.length} 个文件${writeNfo ? '，并写入 NFO' : ''}${strm ? '，并生成 STRM' : ''}。\n执行后可随时在重命名页或任务中心撤销。`"
       confirm-text="确认执行"
       :loading="store.executing"
       @confirm="execute"

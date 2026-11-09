@@ -8,7 +8,14 @@ from sqlmodel import Session, select
 
 from app.db import engine
 from app.main import app
-from app.models import MediaFile, RenameHistory, ScrapeMatch, TaskItem, TaskRecord
+from app.models import (
+    MediaFile,
+    OpenListInstance,
+    RenameHistory,
+    ScrapeMatch,
+    TaskItem,
+    TaskRecord,
+)
 
 
 def add_media(tmp_path: Path, name: str, episode: int, with_match: bool = True) -> int:
@@ -142,6 +149,288 @@ async def test_execute_suffix_policy(client, tmp_path):
     detail = await wait_for_task(client, response.json()["task_id"])
     assert detail["done"] == 1
     assert (tmp_path / "Show - S01E01 (1).mkv").exists()
+
+
+class FakeOpenListSource:
+    def __init__(self) -> None:
+        self.uploads: list[tuple[str, str, str]] = []
+        self.mkdirs: list[str] = []
+
+    async def rename(self, path: str, new_name: str) -> str:
+        parent = path.rsplit("/", 1)[0]
+        return f"{parent}/{new_name}"
+
+    async def exists(self, parent: str, name: str) -> bool:
+        return False
+
+    async def mkdir(self, path: str) -> None:
+        self.mkdirs.append(path)
+
+    def join(self, dir_path: str, name: str) -> str:
+        return f"{dir_path.rstrip('/')}/{name}"
+
+    async def upload(self, dir_path: str, content: bytes, filename: str) -> None:
+        self.uploads.append((dir_path, content.decode("utf-8"), filename))
+
+
+def patch_strm_options(
+    monkeypatch,
+    *,
+    mode: str = "alongside",
+    target_dir: str = "",
+    template: str = "{base_url}/d/{path}",
+    rules: list[dict] | None = None,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.task_manager.get_strm_options",
+        lambda session: {
+            "template": template,
+            "mode": mode,
+            "target_dir": target_dir,
+            "rules": rules or [],
+        },
+    )
+
+
+async def test_strm_written_alongside_local(client, tmp_path, monkeypatch):
+    media_id = add_media(tmp_path, "Show.S01E01.mkv", 1)
+    patch_strm_options(monkeypatch)
+
+    response = await client.post(
+        "/api/rename/execute",
+        json={
+            "file_ids": [media_id],
+            "template": "{title} - S{season:02d}E{episode:02d}",
+            "write_nfo": False,
+            "write_strm": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+    detail = await wait_for_task(client, response.json()["task_id"])
+    assert detail["done"] == 1
+
+    strm = tmp_path / "Show - S01E01.strm"
+    assert strm.exists()
+    assert strm.read_text(encoding="utf-8") == str(tmp_path / "Show - S01E01.mkv")
+
+
+async def test_strm_written_to_library_dir(client, tmp_path, monkeypatch):
+    media_id = add_media(tmp_path, "Show.S01E01.mkv", 1)
+    library = tmp_path / "library"
+    patch_strm_options(monkeypatch, mode="library", target_dir=str(library))
+
+    response = await client.post(
+        "/api/rename/execute",
+        json={
+            "file_ids": [media_id],
+            "template": "{title} - S{season:02d}E{episode:02d}",
+            "write_nfo": False,
+            "write_strm": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+    detail = await wait_for_task(client, response.json()["task_id"])
+    assert detail["done"] == 1
+
+    strm = library / "Show" / "Season 01" / "Show - S01E01.strm"
+    assert strm.exists()
+    assert strm.read_text(encoding="utf-8") == str(tmp_path / "Show - S01E01.mkv")
+
+
+async def test_strm_written_alongside_openlist(client, tmp_path, monkeypatch):
+    media_id = add_media(tmp_path, "Show.S01E01.mkv", 1)
+    with Session(engine) as session:
+        instance = OpenListInstance(
+            name="cloud",
+            base_url="https://fox.example.com",
+            username="admin",
+            password_encrypted="x",
+        )
+        session.add(instance)
+        session.commit()
+        session.refresh(instance)
+        media = session.get(MediaFile, media_id)
+        media.source_type = "openlist"
+        media.openlist_id = instance.id
+        media.source_ref = "/cloud/Show.S01E01.mkv"
+        media.scan_root = "/cloud"
+        session.add(media)
+        session.commit()
+
+    fake = FakeOpenListSource()
+    monkeypatch.setattr(
+        "app.services.rename_service.get_datasource", lambda *args, **kwargs: fake
+    )
+    monkeypatch.setattr(
+        "app.services.task_manager.get_datasource", lambda *args, **kwargs: fake
+    )
+    patch_strm_options(monkeypatch)
+
+    response = await client.post(
+        "/api/rename/execute",
+        json={
+            "file_ids": [media_id],
+            "template": "{title} - S{season:02d}E{episode:02d}",
+            "write_nfo": False,
+            "write_strm": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+    detail = await wait_for_task(client, response.json()["task_id"])
+    assert detail["done"] == 1
+
+    assert fake.uploads == [
+        (
+            "/cloud",
+            "https://fox.example.com/d/cloud/Show%20-%20S01E01.mkv",
+            "Show - S01E01.strm",
+        )
+    ]
+
+
+async def test_strm_rule_creates_show_folder_local(client, tmp_path, monkeypatch):
+    show_dir = tmp_path / "美剧" / "大宋提刑官"
+    show_dir.mkdir(parents=True)
+    media_id = add_media(show_dir, "01.mkv", 1)
+    library = tmp_path / "strm"
+    patch_strm_options(
+        monkeypatch,
+        rules=[
+            {
+                "source": str(tmp_path / "美剧"),
+                "target_type": "local",
+                "target_id": None,
+                "target_dir": str(library),
+            }
+        ],
+    )
+
+    response = await client.post(
+        "/api/rename/execute",
+        json={
+            "file_ids": [media_id],
+            "template": "{title} - S{season:02d}E{episode:02d}",
+            "write_nfo": False,
+            "write_strm": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+    detail = await wait_for_task(client, response.json()["task_id"])
+    assert detail["done"] == 1
+
+    strm = library / "大宋提刑官" / "Show - S01E01.strm"
+    assert strm.exists()
+    assert strm.read_text(encoding="utf-8") == str(show_dir / "Show - S01E01.mkv")
+
+
+async def test_strm_rule_creates_openlist_folders(client, tmp_path, monkeypatch):
+    media_id = add_media(tmp_path, "Show.S01E01.mkv", 1)
+    with Session(engine) as session:
+        instance = OpenListInstance(
+            name="cloud",
+            base_url="https://fox.example.com",
+            username="admin",
+            password_encrypted="x",
+        )
+        session.add(instance)
+        session.commit()
+        session.refresh(instance)
+        instance_id = instance.id
+        media = session.get(MediaFile, media_id)
+        media.source_type = "openlist"
+        media.openlist_id = instance_id
+        media.source_ref = "/cloud/美剧/大宋提刑官/Season 01/01.mkv"
+        media.scan_root = "/cloud/美剧"
+        session.add(media)
+        session.commit()
+
+    fake = FakeOpenListSource()
+    monkeypatch.setattr(
+        "app.services.rename_service.get_datasource", lambda *args, **kwargs: fake
+    )
+    monkeypatch.setattr(
+        "app.services.task_manager.get_datasource", lambda *args, **kwargs: fake
+    )
+    patch_strm_options(
+        monkeypatch,
+        rules=[
+            {
+                "source": "/cloud/美剧",
+                "target_type": "openlist",
+                "target_id": instance_id,
+                "target_dir": "/strm/美剧",
+            }
+        ],
+    )
+
+    response = await client.post(
+        "/api/rename/execute",
+        json={
+            "file_ids": [media_id],
+            "template": "{title} - S{season:02d}E{episode:02d}",
+            "write_nfo": False,
+            "write_strm": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+    detail = await wait_for_task(client, response.json()["task_id"])
+    assert detail["done"] == 1
+
+    assert fake.mkdirs == [
+        "/strm",
+        "/strm/美剧",
+        "/strm/美剧/大宋提刑官",
+        "/strm/美剧/大宋提刑官/Season 01",
+    ]
+    assert fake.uploads[0][0] == "/strm/美剧/大宋提刑官/Season 01"
+    assert fake.uploads[0][2] == "Show - S01E01.strm"
+    assert fake.uploads[0][1].startswith("https://fox.example.com/d/cloud/")
+
+
+async def test_posters_downloaded_for_openlist(client, tmp_path, monkeypatch):
+    media_id = add_media(tmp_path, "Show.S01E01.mkv", 1)
+    with Session(engine) as session:
+        media = session.get(MediaFile, media_id)
+        media.source_type = "openlist"
+        media.openlist_id = 1
+        media.source_ref = "/cloud/Show.S01E01.mkv"
+        match = session.exec(
+            select(ScrapeMatch).where(ScrapeMatch.file_id == media_id)
+        ).first()
+        match.still_url = "https://image.tmdb.org/t/p/w500/still.jpg"
+        session.add(media)
+        session.add(match)
+        session.commit()
+
+    fake = FakeOpenListSource()
+    monkeypatch.setattr(
+        "app.services.rename_service.get_datasource", lambda *args, **kwargs: fake
+    )
+    monkeypatch.setattr(
+        "app.services.task_manager.get_datasource", lambda *args, **kwargs: fake
+    )
+
+    calls: list[tuple[str, str, str | None]] = []
+
+    async def record(self, datasource, new_path, url, new_name):
+        calls.append((new_path, url, new_name))
+
+    monkeypatch.setattr("app.services.task_manager.TaskManager._download_thumb", record)
+
+    response = await client.post(
+        "/api/rename/execute",
+        json={
+            "file_ids": [media_id],
+            "template": "{title} - S{season:02d}E{episode:02d}",
+            "write_nfo": False,
+            "download_posters": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+    detail = await wait_for_task(client, response.json()["task_id"])
+    assert detail["done"] == 1
+    assert len(calls) == 1
+    assert calls[0][1] == "https://image.tmdb.org/t/p/w500/still.jpg"
 
 
 async def test_nfo_failure_does_not_fail_rename(client, tmp_path, monkeypatch):

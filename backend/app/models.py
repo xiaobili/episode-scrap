@@ -86,6 +86,7 @@ class TaskRecord(SQLModel, table=True):
     template: str | None = None
     write_nfo: bool = True
     download_posters: bool = False
+    write_strm: bool = False
     created_at: datetime = Field(default_factory=utcnow)
     finished_at: datetime | None = None
     error: str | None = None

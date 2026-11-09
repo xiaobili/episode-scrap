@@ -13,6 +13,20 @@ def init_db() -> None:
     import app.models  # noqa: F401
 
     SQLModel.metadata.create_all(engine)
+    _ensure_columns()
+
+
+def _ensure_columns() -> None:
+    """为已有 SQLite 数据库补齐新增列（create_all 不会修改旧表结构）。"""
+    if not settings.database_url.startswith("sqlite"):
+        return
+    with engine.connect() as conn:
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(taskrecord)")}
+        if columns and "write_strm" not in columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE taskrecord ADD COLUMN write_strm BOOLEAN NOT NULL DEFAULT 0"
+            )
+            conn.commit()
 
 
 def get_session() -> Generator[Session, None, None]:
