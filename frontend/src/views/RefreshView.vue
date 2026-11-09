@@ -46,7 +46,7 @@ async function loadLibraries() {
   error.value = ''
   try {
     libraries.value = await api.getJellyfinLibraries()
-    selected.value = libraries.value.map((lib) => lib.id)
+    selected.value = []
     results.value = {}
   } catch (err) {
     error.value = messageOf(err)
