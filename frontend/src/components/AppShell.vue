@@ -111,7 +111,14 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
         <span
           class="grid h-7 w-7 place-items-center rounded-[7px] border border-[rgba(24,194,168,.38)] bg-gradient-to-br from-[rgba(24,194,168,.22)] to-[rgba(24,194,168,.05)] text-accent"
         >
-          <AppIcon name="film" :size="15" />
+          <span
+            class="h-[16px] w-[16px] bg-current"
+            style="
+              mask: url('/icon.svg') center / contain no-repeat;
+              -webkit-mask: url('/icon.svg') center / contain no-repeat;
+            "
+            aria-hidden="true"
+          />
         </span>
         <span class="leading-tight">
           <span class="block text-[14.5px] font-semibold tracking-[0.01em]">
