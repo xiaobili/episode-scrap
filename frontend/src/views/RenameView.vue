@@ -12,6 +12,7 @@ import Pager from '@/components/Pager.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import TaskProgress from '@/components/TaskProgress.vue'
 import TemplateEditor from '@/components/TemplateEditor.vue'
+import SelectMenu from '@/components/SelectMenu.vue'
 import { usePagination } from '@/composables/usePagination'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -268,10 +269,14 @@ onBeforeUnmount(disconnect)
             </label>
             <label class="flex items-center gap-1.5 text-xs text-muted">
               冲突处理
-              <select v-model="policy" class="select h-7 !w-auto text-xs">
-                <option value="skip">跳过同名</option>
-                <option value="suffix">自动加后缀</option>
-              </select>
+              <SelectMenu
+                v-model="policy"
+                class="h-7 !w-auto text-xs"
+                :options="[
+                  { value: 'skip', label: '跳过同名' },
+                  { value: 'suffix', label: '自动加后缀' },
+                ]"
+              />
             </label>
             <button
               class="btn btn-primary"

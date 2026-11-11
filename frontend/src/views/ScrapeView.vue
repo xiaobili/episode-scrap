@@ -10,6 +10,7 @@ import ErrorBanner from '@/components/ErrorBanner.vue'
 import Pager from '@/components/Pager.vue'
 import ShowCard from '@/components/ShowCard.vue'
 import StatusTag from '@/components/StatusTag.vue'
+import SelectMenu from '@/components/SelectMenu.vue'
 import { usePagination } from '@/composables/usePagination'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -205,11 +206,11 @@ onMounted(() => {
         />
       </div>
 
-      <select v-model="provider" class="select !w-auto min-w-[120px]">
-        <option v-for="item in providers" :key="item.name" :value="item.name">
-          {{ item.label }}
-        </option>
-      </select>
+      <SelectMenu
+        v-model="provider"
+        class="!w-auto min-w-[120px]"
+        :options="providers.map((p) => ({ value: p.name, label: p.label }))"
+      />
 
       <button class="btn" :disabled="searching" @click="search">
         <AppIcon name="search" :size="14" :spin="searching" />
@@ -378,11 +379,11 @@ onMounted(() => {
               </p>
               <div class="mt-1.5 flex items-center gap-1.5">
                 <label class="text-[11px] text-muted">季</label>
-                <select v-model.number="season" class="select h-7 !w-auto min-w-[100px] text-xs" @change="loadSeason">
-                  <option v-for="item in seasons" :key="item.season" :value="item.season">
-                    {{ item.name || `第 ${item.season} 季` }}
-                  </option>
-                </select>
+                <SelectMenu
+                  v-model="season"
+                  class="h-7 !w-auto min-w-[100px] text-xs"
+                  :options="seasons.map((s) => ({ value: s.season, label: s.name || `第 ${s.season} 季` }))"
+                />
               </div>
             </div>
           </div>

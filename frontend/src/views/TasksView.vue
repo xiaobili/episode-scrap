@@ -8,6 +8,7 @@ import EmptyState from '@/components/EmptyState.vue'
 import ErrorBanner from '@/components/ErrorBanner.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import TaskProgress from '@/components/TaskProgress.vue'
+import SelectMenu from '@/components/SelectMenu.vue'
 import { useToast } from '@/composables/useToast'
 import type { Task, TaskDetail } from '@/types'
 
@@ -166,11 +167,11 @@ onBeforeUnmount(() => {
         <p class="mt-1 text-[13px] text-muted">查看历史任务与逐项执行结果，失败项可重试</p>
       </div>
       <div class="flex items-center gap-2">
-        <select v-model="filter" class="select !w-auto text-xs">
-          <option v-for="item in filters" :key="item.value" :value="item.value">
-            {{ item.label }}
-          </option>
-        </select>
+        <SelectMenu
+          v-model="filter"
+          class="!w-auto text-xs"
+          :options="filters.map((f) => ({ value: f.value, label: f.label }))"
+        />
         <button class="btn" :disabled="loading" @click="load">
           <AppIcon name="refresh" :size="14" :spin="loading" />
           刷新

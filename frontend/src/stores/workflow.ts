@@ -91,6 +91,17 @@ export const useWorkflowStore = defineStore('workflow', () => {
     currentShow.value = null
   }
 
+  function resetScanPath() {
+    if (sourceType.value === 'local') {
+      scanPath.value = settings.value?.allowed_paths?.[0] ?? ''
+    } else {
+      const instance = datasources.value.find(
+        (s) => s.type === 'openlist' && s.id === openlistId.value,
+      )
+      scanPath.value = instance?.mount_path ?? ''
+    }
+  }
+
   async function init() {
     loading.value = true
     try {
@@ -237,5 +248,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
     setSelected,
     clearSelection,
     resetDownstream,
+    resetScanPath,
   }
 })

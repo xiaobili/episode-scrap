@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
+import SelectMenu from '@/components/SelectMenu.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -35,14 +36,19 @@ const pages = computed<(number | null)[]>(() => {
   return result
 })
 
+const sizeOptions = computed(() =>
+  props.pageSizes.map((s) => ({ value: s, label: String(s) })),
+)
+
+const pageSizeValue = computed({
+  get: () => props.pageSize,
+  set: (v: string | number | null) => emit('update:pageSize', Number(v)),
+})
+
 function go(page: number | null) {
   if (page === null) return
   const next = Math.min(Math.max(page, 1), props.pageCount)
   if (next !== props.page) emit('update:page', next)
-}
-
-function changePageSize(event: Event) {
-  emit('update:pageSize', Number((event.target as HTMLSelectElement).value))
 }
 </script>
 
@@ -55,9 +61,11 @@ function changePageSize(event: Event) {
     </span>
     <label class="flex items-center gap-1.5">
       每页
-      <select class="select h-7 !w-auto text-xs" :value="pageSize" @change="changePageSize">
-        <option v-for="size in pageSizes" :key="size" :value="size">{{ size }}</option>
-      </select>
+      <SelectMenu
+        v-model="pageSizeValue"
+        class="h-7 !w-auto text-xs"
+        :options="sizeOptions"
+      />
     </label>
 
     <div class="ml-auto flex items-center gap-1">

@@ -10,6 +10,7 @@ import ErrorBanner from '@/components/ErrorBanner.vue'
 import FileTable from '@/components/FileTable.vue'
 import Pager from '@/components/Pager.vue'
 import PathPicker from '@/components/PathPicker.vue'
+import SelectMenu from '@/components/SelectMenu.vue'
 import { usePagination } from '@/composables/usePagination'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -84,6 +85,16 @@ watch(
   () => {
     store.clearSelection()
     lastScan.value = null
+    store.resetScanPath()
+  },
+)
+
+watch(
+  () => store.openlistId,
+  (newId, oldId) => {
+    if (newId !== oldId && store.sourceType === 'openlist') {
+      store.resetScanPath()
+    }
   },
 )
 
@@ -118,6 +129,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
           v-model:recursive="store.recursive"
           :source-type="store.sourceType"
           :openlist-id="store.openlistId"
+          :allowed-roots="store.settings?.allowed_paths ?? []"
         />
       </div>
 
@@ -125,11 +137,11 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
         <div v-if="store.sourceType === 'openlist'" class="w-full max-w-xs">
           <label class="label">OpenList 实例</label>
           <div v-if="openlistInstances.length" class="flex gap-2">
-            <select v-model="store.openlistId" class="select">
-              <option v-for="instance in openlistInstances" :key="instance.id!" :value="instance.id">
-                {{ instance.name }}
-              </option>
-            </select>
+            <SelectMenu
+              v-model="store.openlistId"
+              class="flex-1"
+              :options="openlistInstances.map((i) => ({ value: i.id!, label: i.name }))"
+            />
             <button class="btn flex-none" @click="router.push('/settings')">管理</button>
           </div>
           <div

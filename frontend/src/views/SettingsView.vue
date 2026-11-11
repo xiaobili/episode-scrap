@@ -8,6 +8,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorBanner from '@/components/ErrorBanner.vue'
 import StatusTag from '@/components/StatusTag.vue'
+import SelectMenu from '@/components/SelectMenu.vue'
 import TemplateEditor from '@/components/TemplateEditor.vue'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -557,11 +558,15 @@ onMounted(loadInstances)
           <div class="mt-4 grid gap-3 sm:grid-cols-2">
             <div>
               <label class="label">输出方式</label>
-              <select v-model="strmMode" class="select h-9">
-                <option value="alongside">与视频同目录</option>
-                <option value="library">本地媒体库（剧名 / Season）</option>
-                <option value="mirror">独立目录镜像</option>
-              </select>
+              <SelectMenu
+                v-model="strmMode"
+                class="h-9"
+                :options="[
+                  { value: 'alongside', label: '与视频同目录' },
+                  { value: 'library', label: '本地媒体库（剧名 / Season）' },
+                  { value: 'mirror', label: '独立目录镜像' },
+                ]"
+              />
             </div>
             <div>
               <label class="label">目标目录（绝对路径）</label>
@@ -615,20 +620,21 @@ onMounted(loadInstances)
                 </div>
                 <div>
                   <label class="label">目标</label>
-                  <select v-model="rule.target_type" class="select h-9">
-                    <option value="local">本地目录</option>
-                    <option value="openlist">OpenList</option>
-                  </select>
-                  <select
+                  <SelectMenu
+                    v-model="rule.target_type"
+                    class="h-9"
+                    :options="[
+                      { value: 'local', label: '本地目录' },
+                      { value: 'openlist', label: 'OpenList' },
+                    ]"
+                  />
+                  <SelectMenu
                     v-if="rule.target_type === 'openlist'"
                     v-model="rule.target_id"
-                    class="select mt-1.5 h-9"
-                  >
-                    <option :value="null" disabled>选择实例</option>
-                    <option v-for="instance in instances" :key="instance.id" :value="instance.id">
-                      {{ instance.name }}
-                    </option>
-                  </select>
+                    class="mt-1.5 h-9"
+                    :options="instances.map((i) => ({ value: i.id, label: i.name }))"
+                    placeholder="选择实例"
+                  />
                 </div>
                 <div>
                   <label class="label">目标目录</label>
