@@ -30,12 +30,22 @@ def _validate_url(url: str) -> str:
     return url.rstrip("/")
 
 
+def _validate_mount_path(path: str) -> str:
+    cleaned = path.strip().rstrip("/")
+    if not cleaned:
+        return "/"
+    if not cleaned.startswith("/"):
+        raise HTTPException(status_code=400, detail="挂载路径必须以 / 开头")
+    return cleaned or "/"
+
+
 def _to_out(instance: OpenListInstance) -> OpenListOut:
     return OpenListOut(
         id=instance.id or 0,
         name=instance.name,
         base_url=instance.base_url,
         username=instance.username,
+        mount_path=instance.mount_path or "/",
         timeout=instance.timeout,
         concurrency=instance.concurrency,
         has_password=bool(instance.password_encrypted),
@@ -56,6 +66,7 @@ def list_datasources(session: Session = Depends(get_session)) -> list[DataSource
                 name=instance.name,
                 base_url=instance.base_url,
                 username=instance.username,
+                mount_path=instance.mount_path or "/",
             )
         )
     return items
@@ -77,6 +88,7 @@ def create_openlist_instance(
         base_url=_validate_url(payload.base_url),
         username=payload.username,
         password_encrypted=encrypt(payload.password),
+        mount_path=_validate_mount_path(payload.mount_path),
         timeout=payload.timeout,
         concurrency=payload.concurrency,
     )
@@ -102,6 +114,8 @@ def update_openlist_instance(
         instance.username = payload.username
     if payload.password:
         instance.password_encrypted = encrypt(payload.password)
+    if payload.mount_path is not None:
+        instance.mount_path = _validate_mount_path(payload.mount_path)
     if payload.timeout is not None:
         instance.timeout = payload.timeout
     if payload.concurrency is not None:
@@ -161,15 +175,19 @@ async def test_openlist_instance(
 )
 async def openlist_tree(
     instance_id: int,
-    path: str = "/",
+    path: str | None = None,
     refresh: bool = False,
     session: Session = Depends(get_session),
 ) -> TreeResponse:
-    if not path.startswith("/"):
+    instance = session.get(OpenListInstance, instance_id)
+    if not instance:
+        raise HTTPException(status_code=404, detail="OpenList 实例不存在")
+    resolved = path or instance.mount_path or "/"
+    if not resolved.startswith("/"):
         raise HTTPException(status_code=400, detail="OpenList 路径必须以 / 开头")
     try:
         datasource = get_datasource(session, "openlist", instance_id)
-        entries = await datasource.list_dir(path, refresh=refresh)
+        entries = await datasource.list_dir(resolved, refresh=refresh)
     except OpenListAuthError as exc:
         raise HTTPException(status_code=401, detail=exc.message) from exc
     except OpenListError as exc:
@@ -181,5 +199,5 @@ async def openlist_tree(
         if e.is_dir
     ]
     dirs.sort(key=lambda e: e.name)
-    parent = None if path.rstrip("/") in ("", "/") else os.path.dirname(path.rstrip("/"))
-    return TreeResponse(path=path, parent=parent, entries=dirs)
+    parent = None if resolved.rstrip("/") in ("", "/") else os.path.dirname(resolved.rstrip("/"))
+    return TreeResponse(path=resolved, parent=parent, entries=dirs)

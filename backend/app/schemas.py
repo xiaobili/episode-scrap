@@ -118,6 +118,7 @@ class OpenListCreate(BaseModel):
     base_url: str
     username: str
     password: str
+    mount_path: str = "/"
     timeout: int = 30
     concurrency: int = 3
 
@@ -127,6 +128,7 @@ class OpenListUpdate(BaseModel):
     base_url: str | None = None
     username: str | None = None
     password: str | None = None
+    mount_path: str | None = None
     timeout: int | None = None
     concurrency: int | None = None
 
@@ -136,6 +138,7 @@ class OpenListOut(BaseModel):
     name: str
     base_url: str
     username: str
+    mount_path: str
     timeout: int
     concurrency: int
     has_password: bool = True
@@ -148,6 +151,7 @@ class DataSourceOut(BaseModel):
     name: str
     base_url: str | None = None
     username: str | None = None
+    mount_path: str = "/"
 
 
 class TestConnectionOut(BaseModel):

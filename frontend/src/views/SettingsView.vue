@@ -46,6 +46,7 @@ const form = ref({
   base_url: '',
   username: '',
   password: '',
+  mount_path: '/',
   timeout: 30,
   concurrency: 3,
 })
@@ -147,6 +148,7 @@ function openCreate() {
     base_url: '',
     username: '',
     password: '',
+    mount_path: '/',
     timeout: timeout.value,
     concurrency: concurrency.value,
   }
@@ -161,6 +163,7 @@ function openEdit(instance: OpenListInstance) {
     base_url: instance.base_url,
     username: instance.username,
     password: '',
+    mount_path: instance.mount_path || '/',
     timeout: instance.timeout,
     concurrency: instance.concurrency,
   }
@@ -177,6 +180,7 @@ async function saveInstance() {
     name: form.value.name.trim(),
     base_url: form.value.base_url.trim(),
     username: form.value.username.trim(),
+    mount_path: form.value.mount_path.trim() || '/',
     timeout: Number(form.value.timeout) || 30,
     concurrency: Number(form.value.concurrency) || 3,
   }
@@ -444,6 +448,9 @@ onMounted(loadInstances)
                   <p class="truncate text-[13px] font-medium text-ink">{{ instance.name }}</p>
                   <p class="mt-0.5 truncate font-mono text-[11.5px] text-muted">
                     {{ instance.base_url }}
+                  </p>
+                  <p class="mt-0.5 truncate font-mono text-[11px] text-accent/80">
+                    挂载 {{ instance.mount_path || '/' }}
                   </p>
                   <p class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-faint">
                     <span>用户 {{ instance.username || '—' }}</span>
@@ -756,6 +763,18 @@ onMounted(loadInstances)
         <div class="sm:col-span-2">
           <label class="label">服务地址</label>
           <input v-model="form.base_url" class="input font-mono text-xs" placeholder="https://fox.oplist.org" spellcheck="false" />
+        </div>
+        <div class="sm:col-span-2">
+          <label class="label">挂载路径</label>
+          <input
+            v-model="form.mount_path"
+            class="input font-mono text-xs"
+            placeholder="/媒体/剧集"
+            spellcheck="false"
+          />
+          <p class="mt-1 text-[11px] text-faint">
+            云盘浏览与扫描的默认根目录，留空默认 /。填写后将只能访问此目录及以下。
+          </p>
         </div>
         <div>
           <label class="label">用户名</label>

@@ -13,6 +13,7 @@ class OpenListInstance(SQLModel, table=True):
     base_url: str
     username: str
     password_encrypted: str
+    mount_path: str = "/"
     timeout: int = 30
     concurrency: int = 3
     created_at: datetime = Field(default_factory=utcnow)

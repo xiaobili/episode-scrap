@@ -41,7 +41,12 @@ async def scan(payload: ScanRequest, session: Session = Depends(get_session)) ->
                 raise HTTPException(status_code=400, detail=f"目录不存在：{payload.source_ref}")
             datasource = get_datasource(session, "local")
         else:
-            root = payload.source_ref or "/"
+            from app.models import OpenListInstance
+
+            instance = session.get(OpenListInstance, payload.openlist_id)
+            if not instance:
+                raise HTTPException(status_code=400, detail="OpenList 实例不存在")
+            root = payload.source_ref or instance.mount_path or "/"
             if not root.startswith("/"):
                 raise HTTPException(status_code=400, detail="OpenList 路径必须以 / 开头")
             datasource = get_datasource(session, "openlist", payload.openlist_id)

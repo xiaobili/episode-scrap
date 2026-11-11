@@ -28,6 +28,15 @@ def _ensure_columns() -> None:
             )
             conn.commit()
 
+        ol_columns = {
+            row[1] for row in conn.exec_driver_sql("PRAGMA table_info(openlistinstance)")
+        }
+        if ol_columns and "mount_path" not in ol_columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE openlistinstance ADD COLUMN mount_path VARCHAR NOT NULL DEFAULT '/'"
+            )
+            conn.commit()
+
 
 def get_session() -> Generator[Session, None, None]:
     with Session(engine) as session:

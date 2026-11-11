@@ -36,6 +36,7 @@ export interface DataSource {
   name: string
   base_url: string | null
   username: string | null
+  mount_path: string
 }
 
 export interface OpenListInstance {
@@ -43,6 +44,7 @@ export interface OpenListInstance {
   name: string
   base_url: string
   username: string
+  mount_path: string
   timeout: number
   concurrency: number
   has_password: boolean
