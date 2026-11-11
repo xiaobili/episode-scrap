@@ -10,8 +10,10 @@ class OpenListDataSource(BaseDataSource):
     def __init__(self, client: OpenListClient):
         self.client = client
 
-    async def list_dir(self, path: str, recursive: bool = False) -> list[FileEntry]:
-        return await self.client.list(path, recursive=recursive)
+    async def list_dir(
+        self, path: str, recursive: bool = False, refresh: bool = False
+    ) -> list[FileEntry]:
+        return await self.client.list(path, recursive=recursive, refresh=refresh)
 
     async def get_file(self, path: str) -> FileEntry | None:
         return await self.client.get(path)

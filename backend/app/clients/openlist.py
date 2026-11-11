@@ -73,15 +73,21 @@ class OpenListClient:
     def _auth_headers(self) -> dict[str, str]:
         return {"Authorization": self._token or ""}
 
-    async def list(self, path: str, recursive: bool = False) -> list[FileEntry]:
+    async def list(
+        self, path: str, recursive: bool = False, refresh: bool = False
+    ) -> list[FileEntry]:
         data = await self._request(
-            "POST", "/api/fs/list", json={"path": path, "page": 1, "per_page": 0, "refresh": False}
+            "POST",
+            "/api/fs/list",
+            json={"path": path, "page": 1, "per_page": 0, "refresh": refresh},
         )
         entries = [_entry(path, item) for item in data.get("content") or []]
         if recursive:
             for entry in list(entries):
                 if entry.is_dir:
-                    entries.extend(await self.list(entry.path, recursive=True))
+                    entries.extend(
+                        await self.list(entry.path, recursive=True, refresh=refresh)
+                    )
         return entries
 
     async def get(self, path: str) -> FileEntry | None:

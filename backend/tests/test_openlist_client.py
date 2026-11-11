@@ -75,6 +75,23 @@ async def test_auth_failure_raises():
     await client.close()
 
 
+async def test_list_can_force_refresh():
+    captured = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/auth/login":
+            return httpx.Response(200, json={"code": 200, "data": {"token": "t"}})
+        captured.append(json.loads(request.content))
+        return httpx.Response(200, json={"code": 200, "data": {"content": []}})
+
+    client = make_client(handler)
+    await client.list("/root")
+    await client.list("/root", refresh=True)
+    assert captured[0]["refresh"] is False
+    assert captured[1]["refresh"] is True
+    await client.close()
+
+
 async def test_recursive_list():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/auth/login":

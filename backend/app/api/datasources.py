@@ -162,13 +162,14 @@ async def test_openlist_instance(
 async def openlist_tree(
     instance_id: int,
     path: str = "/",
+    refresh: bool = False,
     session: Session = Depends(get_session),
 ) -> TreeResponse:
     if not path.startswith("/"):
         raise HTTPException(status_code=400, detail="OpenList 路径必须以 / 开头")
     try:
         datasource = get_datasource(session, "openlist", instance_id)
-        entries = await datasource.list_dir(path)
+        entries = await datasource.list_dir(path, refresh=refresh)
     except OpenListAuthError as exc:
         raise HTTPException(status_code=401, detail=exc.message) from exc
     except OpenListError as exc:

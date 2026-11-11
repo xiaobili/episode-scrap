@@ -55,9 +55,11 @@ export const api = {
       .post<{ ok: boolean; message: string }>(`/datasources/openlist/${id}/test`)
       .then((r) => r.data),
 
-  getOpenListTree: (id: number, path: string) =>
+  getOpenListTree: (id: number, path: string, refresh = false) =>
     http
-      .get<TreeResponse>(`/datasources/openlist/${id}/tree`, { params: { path } })
+      .get<TreeResponse>(`/datasources/openlist/${id}/tree`, {
+        params: { path, refresh },
+      })
       .then((r) => r.data),
 
   getLocalTree: (path: string) =>

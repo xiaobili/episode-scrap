@@ -15,7 +15,11 @@ class BaseDataSource(ABC):
     name: str
 
     @abstractmethod
-    async def list_dir(self, path: str, recursive: bool = False) -> list[FileEntry]: ...
+    async def list_dir(
+        self, path: str, recursive: bool = False, refresh: bool = False
+    ) -> list[FileEntry]:
+        """列出目录内容；refresh 表示强制绕过数据源侧缓存（不支持则忽略）。"""
+        ...
 
     @abstractmethod
     async def get_file(self, path: str) -> FileEntry | None: ...

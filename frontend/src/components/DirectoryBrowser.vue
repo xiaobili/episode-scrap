@@ -40,7 +40,7 @@ const crumbs = computed(() => {
   return [{ label: props.mode === 'openlist' ? '云盘根目录' : '根目录', path: absolute ? '/' : '' }, ...items]
 })
 
-async function load(target: string) {
+async function load(target: string, force = false) {
   if (props.mode === 'openlist' && !props.openlistId) {
     error.value = '请先选择 OpenList 实例'
     return
@@ -50,7 +50,7 @@ async function load(target: string) {
   try {
     tree.value =
       props.mode === 'openlist'
-        ? await api.getOpenListTree(props.openlistId as number, target)
+        ? await api.getOpenListTree(props.openlistId as number, target, force)
         : await api.getLocalTree(target)
     path.value = tree.value.path
   } catch (err) {
@@ -92,7 +92,7 @@ function choose() {
           <button class="flex-none hover:text-ink" @click="load(crumb.path)">{{ crumb.label }}</button>
         </template>
       </span>
-      <button class="btn btn-sm" :disabled="loading" @click="load(path)">
+      <button class="btn btn-sm" :disabled="loading" @click="load(path, true)">
         <AppIcon name="refresh" :size="13" :spin="loading" />
         刷新
       </button>
