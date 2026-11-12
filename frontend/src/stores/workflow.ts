@@ -105,16 +105,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
   async function init() {
     loading.value = true
     try {
-      const [sources, providerList, settingsData, fileList] = await Promise.all([
+      const [sources, providerList, settingsData] = await Promise.all([
         api.getDataSources(),
         api.getProviders(),
         api.getSettings(),
-        api.getFiles(),
       ])
       datasources.value = sources
       providers.value = providerList
       settings.value = settingsData
-      files.value = [...fileList].sort((a, b) => a.id - b.id)
 
       const local = sources.find((item) => item.type === 'local')
       if (local) sourceType.value = 'local'
