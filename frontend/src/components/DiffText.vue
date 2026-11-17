@@ -58,16 +58,16 @@ const segments = computed(() => diff(props.before, props.after))
 </script>
 
 <template>
-  <span class="block truncate font-mono text-xs" :title="after">
-    <span
-      v-for="(segment, index) in segments"
-      :key="index"
-      :class="
-        segment.changed
-          ? 'rounded-sm bg-[rgba(61,214,140,.16)] px-px text-success'
-          : 'text-muted'
-      "
-      >{{ segment.text }}</span
-    >
+  <span class="block" :title="after">
+    <span v-if="before" class="diff-old">{{ before }}</span>
+    <span class="diff-new">
+      <span class="arw">→</span>
+      <span class="txt">
+        <template v-for="(segment, index) in segments" :key="index">
+          <mark v-if="segment.changed">{{ segment.text }}</mark>
+          <template v-else>{{ segment.text }}</template>
+        </template>
+      </span>
+    </span>
   </span>
 </template>

@@ -8,11 +8,14 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DiffText from '@/components/DiffText.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorBanner from '@/components/ErrorBanner.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import Pager from '@/components/Pager.vue'
+import SegmentedControl from '@/components/SegmentedControl.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import TaskProgress from '@/components/TaskProgress.vue'
 import TemplateEditor from '@/components/TemplateEditor.vue'
-import SelectMenu from '@/components/SelectMenu.vue'
+import ToggleSwitch from '@/components/ToggleSwitch.vue'
+import type { SlateRow } from '@/components/ui-types'
 import { usePagination } from '@/composables/usePagination'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -50,6 +53,38 @@ const readyItems = computed(() => items.value.filter((item) => item.status === '
 const chosenItems = computed(() =>
   readyItems.value.filter((item) => includeIds.value.includes(item.file_id)),
 )
+
+const outputLabel = computed(() => {
+  const parts: string[] = []
+  if (writeNfo.value) parts.push('NFO')
+  if (posters.value) parts.push('POSTER')
+  if (strm.value) parts.push('STRM')
+  return parts.length ? parts.join(' + ') : '—'
+})
+
+const slate = computed<SlateRow[]>(() => [
+  { label: 'READY', value: preview.value ? String(preview.value.ready) : '—' },
+  {
+    label: 'CONFLICT',
+    value: preview.value ? String(preview.value.conflicts) : '—',
+    tone: preview.value?.conflicts ? 'amber' : undefined,
+  },
+  { label: 'SKIPPED', value: preview.value ? String(preview.value.skipped) : '—' },
+  { label: 'OUTPUT', value: outputLabel.value },
+])
+
+const policyOptions = [
+  { value: 'skip', label: '跳过 SKIP' },
+  { value: 'suffix', label: '后缀 SUFFIX' },
+]
+
+function setPolicy(value: string | number) {
+  policy.value = value === 'suffix' ? 'suffix' : 'skip'
+}
+
+function restoreTemplate() {
+  template.value = store.settings?.rename_template ?? ''
+}
 
 const { page, pageSize, total, pageCount, pageItems } = usePagination(items)
 
@@ -203,16 +238,14 @@ onBeforeUnmount(disconnect)
 
 <template>
   <div>
-    <header class="mb-5 flex flex-wrap items-start gap-3">
-      <div class="min-w-0 flex-1">
-        <h1 class="text-2xl font-semibold leading-8 tracking-tight text-ink">重命名</h1>
-        <p class="mt-1 text-[13px] text-muted">配置命名模板，预览差异后执行，可随时撤销</p>
-      </div>
-      <button class="btn btn-danger" :disabled="rollingBack" @click="rollbackOpen = true">
-        <AppIcon name="undo" :size="14" />
-        撤销上次
-      </button>
-    </header>
+    <PageHeader
+      ghost="04"
+      kicker="STEP 04 · RENAME"
+      title="重命名"
+      title-en="RENAME"
+      description="配置命名模板，预览新旧文件名 diff，确认后批量执行并生成 NFO / STRM。"
+      :slate="slate"
+    />
 
     <ErrorBanner v-if="error" class="mb-4" :message="error" />
 
@@ -222,7 +255,7 @@ onBeforeUnmount(disconnect)
         title="没有可重命名的文件"
         description="请先完成扫描与解析，再回来生成命名方案。"
       >
-        <button class="btn btn-primary" @click="router.push('/parse')">
+        <button class="btn btn-amber" @click="router.push('/parse')">
           <AppIcon name="parse" :size="14" />
           去解析
         </button>
@@ -230,62 +263,34 @@ onBeforeUnmount(disconnect)
     </div>
 
     <template v-else>
-      <section class="panel p-4">
-        <div class="mb-2 flex items-center justify-between">
-          <span class="text-[13px] font-medium text-ink">命名模板</span>
-          <span class="text-[11px] text-faint">目标文件将保留原扩展名</span>
-        </div>
+      <section class="panel">
         <TemplateEditor v-model="template" :sample="sample" />
-        <p class="mt-2 text-[11.5px] text-faint">
-          可用变量：{title} {year} {season} {episode} {episode_title} {resolution} {codec} {release_group}，数字可用 :02d 补零。
-        </p>
+        <div class="flex flex-wrap items-center justify-between gap-2 px-4 pb-3 text-[11.5px] text-faint">
+          <span>
+            可用变量：{title} {year} {season} {episode} {episode_title} {resolution} {codec} {release_group}，数字可用 :02d 补零。
+          </span>
+          <button class="btn btn-xs" type="button" @click="restoreTemplate">恢复默认</button>
+        </div>
       </section>
 
-      <section class="mt-4 panel overflow-hidden">
-        <div class="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
-          <button class="btn" :disabled="store.previewing" @click="runPreview">
-            <AppIcon name="refresh" :size="14" :spin="store.previewing" />
-            仅预览
-          </button>
-
-          <span v-if="preview" class="flex items-center gap-1.5 text-[11.5px]">
-            <span class="tag tag-success">可执行 {{ preview.ready }}</span>
-            <span v-if="preview.conflicts" class="tag tag-warning">冲突 {{ preview.conflicts }}</span>
-            <span v-if="preview.skipped" class="tag">跳过 {{ preview.skipped }}</span>
-          </span>
-
-          <div class="ml-auto flex flex-wrap items-center gap-3">
-            <label class="flex cursor-pointer select-none items-center gap-1.5 text-xs text-muted">
-              <input v-model="writeNfo" type="checkbox" class="h-3.5 w-3.5 accent-accent" />
-              同时写入 NFO
-            </label>
-            <label class="flex cursor-pointer select-none items-center gap-1.5 text-xs text-muted">
-              <input v-model="posters" type="checkbox" class="h-3.5 w-3.5 accent-accent" />
-              下载海报
-            </label>
-            <label class="flex cursor-pointer select-none items-center gap-1.5 text-xs text-muted">
-              <input v-model="strm" type="checkbox" class="h-3.5 w-3.5 accent-accent" />
-              生成 STRM
-            </label>
-            <label class="flex items-center gap-1.5 text-xs text-muted">
-              冲突处理
-              <SelectMenu
-                v-model="policy"
-                class="h-7 !w-auto text-xs"
-                :options="[
-                  { value: 'skip', label: '跳过同名' },
-                  { value: 'suffix', label: '自动加后缀' },
-                ]"
-              />
-            </label>
-            <button
-              class="btn btn-primary"
-              :disabled="store.executing || chosenItems.length === 0"
-              @click="confirmOpen = true"
-            >
-              <AppIcon name="rename" :size="14" />
-              执行重命名（{{ chosenItems.length }}）
-            </button>
+      <section class="panel mt-3.5">
+        <div class="table-toolbar">
+          <div class="toolbar-title">
+            <span>DIFF PREVIEW</span>
+            <b>{{ items.length }} ITEMS</b>
+            <span v-if="preview?.conflicts" class="tag tag-warn">
+              {{ preview.conflicts }} CONFLICTS
+            </span>
+          </div>
+          <div class="toolbar-right">
+            <span class="mono dim" style="font-size: 9px">CONFLICT POLICY</span>
+            <SegmentedControl
+              :model-value="policy"
+              :options="policyOptions"
+              size="sm"
+              aria-label="冲突处理策略"
+              @update:model-value="setPolicy"
+            />
           </div>
         </div>
 
@@ -293,10 +298,7 @@ onBeforeUnmount(disconnect)
           <div class="mb-2 flex items-center gap-2">
             <StatusTag :status="activeTask.status" />
             <span class="font-mono text-xs text-muted">{{ activeTask.id.slice(0, 8) }}</span>
-            <router-link
-              to="/tasks"
-              class="ml-auto text-[11.5px] text-accent hover:underline"
-            >
+            <router-link to="/tasks" class="ml-auto text-[11.5px] text-accent hover:underline">
               查看任务
             </router-link>
           </div>
@@ -312,7 +314,7 @@ onBeforeUnmount(disconnect)
           <EmptyState
             icon="rename"
             :title="store.selectedFiles.length ? `已选 ${store.selectedFiles.length} 项` : '尚未生成预览'"
-            description="点击「仅预览」查看重命名结果，预览不会修改任何文件。"
+            description="点击下方「仅预览」查看重命名结果，预览不会修改任何文件。"
           />
         </div>
 
@@ -321,51 +323,42 @@ onBeforeUnmount(disconnect)
         </div>
 
         <div v-else class="overflow-x-auto">
-          <table class="w-full min-w-[760px] border-collapse text-[13px]">
+          <table class="min-w-[760px]">
             <thead>
-              <tr class="border-b border-line text-left text-xs text-faint">
-                <th class="h-10 w-10 pl-4">
+              <tr>
+                <th class="cb pl-4">
                   <input
                     type="checkbox"
-                    class="h-4 w-4 accent-accent"
                     :checked="readyItems.length > 0 && chosenItems.length === readyItems.length"
                     aria-label="全选可执行项"
                     @change="toggleAllReady"
                   />
                 </th>
-                <th class="h-10 px-3 font-medium">原文件名</th>
-                <th class="h-10 px-3 font-medium">新文件名</th>
-                <th class="h-10 w-24 px-3 font-medium">状态</th>
-                <th class="h-10 w-44 px-3 font-medium">说明</th>
+                <th>原文件名 → 新文件名 / DIFF</th>
+                <th class="w-24">状态</th>
+                <th class="w-44">说明</th>
               </tr>
             </thead>
             <tbody>
               <tr
                 v-for="item in pageItems"
                 :key="item.file_id"
-                class="h-11 border-b border-line/60 last:border-0"
-                :class="item.status === 'conflict' ? 'bg-[rgba(245,184,73,.07)]' : ''"
+                :class="{ sel: item.status === 'conflict' }"
               >
-                <td class="pl-4">
+                <td class="cb pl-4">
                   <input
                     type="checkbox"
-                    class="h-4 w-4 accent-accent"
                     :checked="includeIds.includes(item.file_id)"
                     :disabled="item.status !== 'ready'"
                     :aria-label="`选择 ${item.original_name}`"
                     @change="toggleInclude(item.file_id)"
                   />
                 </td>
-                <td class="max-w-0 px-3">
-                  <span class="block truncate font-mono text-xs text-muted" :title="item.original_name">
-                    {{ item.original_name }}
-                  </span>
-                </td>
-                <td class="max-w-0 px-3">
+                <td class="max-w-0">
                   <DiffText :before="item.original_name" :after="item.new_name ?? '—'" />
                 </td>
-                <td class="px-3"><StatusTag :status="item.status" /></td>
-                <td class="px-3">
+                <td><StatusTag :status="item.status" /></td>
+                <td>
                   <span class="block truncate text-[11.5px] text-faint" :title="item.reason ?? ''">
                     {{ item.reason ?? '—' }}
                   </span>
@@ -396,6 +389,34 @@ onBeforeUnmount(disconnect)
           下一步：刷新媒体库
           <AppIcon name="arrow-right" :size="14" />
         </button>
+      </div>
+
+      <div class="exec-bar">
+        <div class="exec-info">
+          <b>{{ chosenItems.length }}</b> / {{ items.length }} 已选 · TEMPLATE APPLIED
+        </div>
+        <div class="exec-toggles">
+          <ToggleSwitch v-model="writeNfo" label="写入 NFO" size="sm" />
+          <ToggleSwitch v-model="posters" label="下载海报" size="sm" />
+          <ToggleSwitch v-model="strm" label="生成 STRM" size="sm" />
+        </div>
+        <div style="margin-left: auto; display: flex; gap: 7px">
+          <button class="btn btn-sm" :disabled="store.previewing" @click="runPreview">
+            <AppIcon name="refresh" :size="13" :spin="store.previewing" />
+            仅预览
+          </button>
+          <button class="btn btn-sm btn-danger" :disabled="rollingBack" @click="rollbackOpen = true">
+            撤销上次
+          </button>
+          <button
+            class="btn btn-amber"
+            :disabled="store.executing || chosenItems.length === 0"
+            @click="confirmOpen = true"
+          >
+            <AppIcon name="check" :size="14" />
+            执行重命名（{{ chosenItems.length }}）
+          </button>
+        </div>
       </div>
     </template>
 

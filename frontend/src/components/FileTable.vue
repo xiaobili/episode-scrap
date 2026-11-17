@@ -70,6 +70,12 @@ function formatDate(value: string | null): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+function splitName(name: string): { base: string; ext: string } {
+  const index = name.lastIndexOf('.')
+  if (index <= 0) return { base: name, ext: '' }
+  return { base: name.slice(0, index), ext: name.slice(index) }
+}
+
 function episodeLabel(file: MediaFile): string {
   if (!file.parsed || file.parsed.episode === null) return '—'
   const { season, episode } = file.parsed
@@ -78,71 +84,87 @@ function episodeLabel(file: MediaFile): string {
     ? episodeText
     : `S${String(season).padStart(2, '0')}${episodeText}`
 }
+
+function dotClass(file: MediaFile): string {
+  if (!file.parsed) return ''
+  if (file.status === 'matched' || file.status === 'renamed') return 'ok'
+  if (file.confidence >= 85) return 'ok'
+  if (file.confidence >= 60) return 'warn'
+  return 'bad'
+}
+
+function episodeTagClass(file: MediaFile): string {
+  if (!file.parsed) return 'tag-bad'
+  if (file.confidence >= 85) return 'tag-ok'
+  if (file.confidence >= 60) return 'tag-warn'
+  return 'tag-bad'
+}
 </script>
 
 <template>
   <div class="overflow-x-auto">
-    <table class="w-full min-w-[720px] border-collapse text-[13px]">
+    <table class="min-w-[720px]">
       <thead>
-        <tr class="border-b border-line text-left text-xs text-faint">
-          <th v-if="selectable" class="h-10 w-10 pl-3">
+        <tr>
+          <th v-if="selectable" class="cb pl-4">
             <input
               type="checkbox"
-              class="h-4 w-4 accent-accent"
               :checked="allChecked"
               :indeterminate.prop="partial"
               aria-label="全选全部文件"
               @change="toggleAll"
             />
           </th>
-          <th class="h-10 px-3 font-medium">文件名</th>
-          <th v-if="showParsed" class="h-10 w-24 px-2 font-medium">季集</th>
-          <th class="h-10 w-28 px-2 font-medium">状态</th>
-          <th class="h-10 w-24 px-2 text-right font-medium">大小</th>
-          <th class="h-10 w-40 px-2 font-medium">修改时间</th>
-          <th v-if="showSource" class="h-10 w-24 px-3 font-medium">来源</th>
+          <th>文件名 / FILENAME</th>
+          <th>大小</th>
+          <th class="th-date">修改时间</th>
+          <th v-if="showSource">来源</th>
+          <th />
         </tr>
       </thead>
       <tbody>
         <tr
           v-for="file in files"
           :key="file.id"
-          class="h-11 border-b border-line/60 transition-colors last:border-0"
-          :class="selectedSet.has(file.id) ? 'bg-[var(--accent-soft)]' : 'hover:bg-[var(--bg-elevated)]'"
+          :class="{ sel: selectedSet.has(file.id) }"
           :aria-selected="selectedSet.has(file.id)"
           @click="emit('open', file)"
         >
-          <td v-if="selectable" class="pl-3" @click.stop>
+          <td v-if="selectable" class="cb pl-4" @click.stop>
             <input
               type="checkbox"
-              class="h-4 w-4 accent-accent"
               :checked="selectedSet.has(file.id)"
               :aria-label="`选择 ${file.original_name}`"
               @change="toggle(file.id)"
             />
           </td>
-          <td class="max-w-0 px-3">
-            <div class="flex items-center gap-2">
-              <span
-                class="flex-none rounded border border-line px-1 py-px font-mono text-[10px] uppercase text-faint"
-              >
-                {{ file.is_video ? 'VID' : 'OTH' }}
-              </span>
-              <span class="truncate font-mono text-xs" :title="file.original_name">
-                {{ file.original_name }}
+          <td class="max-w-0">
+            <div class="file-cell">
+              <span class="dot" :class="dotClass(file)" />
+              <span class="fn" :title="file.original_name">
+                {{ splitName(file.original_name).base }}<span class="ext">{{ splitName(file.original_name).ext }}</span>
               </span>
             </div>
+            <div v-if="showParsed && file.parsed" class="file-sub">
+              <span class="tag" :class="episodeTagClass(file)">{{ episodeLabel(file) }}</span>
+              <span v-if="file.parsed.title">{{ file.parsed.title }}</span>
+              <template v-if="file.parsed.resolution">
+                <span class="sep">/</span><span>{{ file.parsed.resolution }}</span>
+              </template>
+              <template v-if="file.parsed.codec">
+                <span class="sep">/</span><span>{{ file.parsed.codec }}</span>
+              </template>
+            </div>
           </td>
-          <td v-if="showParsed" class="px-2 font-mono text-xs text-muted">
-            {{ episodeLabel(file) }}
-          </td>
-          <td class="px-2"><StatusTag :status="file.status" /></td>
-          <td class="px-2 text-right font-mono text-xs text-muted">{{ formatSize(file.size) }}</td>
-          <td class="px-2 font-mono text-xs text-faint">{{ formatDate(file.modified_at) }}</td>
-          <td v-if="showSource" class="px-3">
-            <span class="tag" :class="file.source_type === 'openlist' ? 'tag-info' : ''">
-              {{ file.source_type === 'openlist' ? 'OpenList' : '本地' }}
+          <td class="cell-size">{{ formatSize(file.size) }}</td>
+          <td class="cell-date th-date">{{ formatDate(file.modified_at) }}</td>
+          <td v-if="showSource">
+            <span class="tag" :class="file.source_type === 'openlist' ? 'tag-info' : 'tag-amber'">
+              {{ file.source_type === 'openlist' ? 'OPENLIST' : 'LOCAL' }}
             </span>
+          </td>
+          <td class="row-actions">
+            <span class="tag tag-mute">{{ file.is_video ? 'VID' : 'OTH' }}</span>
           </td>
         </tr>
       </tbody>

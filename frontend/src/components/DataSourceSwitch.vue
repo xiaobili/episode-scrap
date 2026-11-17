@@ -23,34 +23,25 @@ function pick(type: SourceType) {
 </script>
 
 <template>
-  <div class="inline-flex rounded-md border border-line-strong bg-base p-0.5">
+  <div class="seg" role="group" aria-label="数据源">
     <button
-      class="flex h-7 items-center gap-1.5 rounded px-3 text-xs font-medium transition"
-      :class="
-        modelValue === 'local'
-          ? 'bg-[var(--accent-soft)] text-accent'
-          : 'text-muted hover:text-ink'
-      "
+      type="button"
+      class="seg-btn"
+      :class="{ on: modelValue === 'local' }"
       :disabled="disabled"
       @click="pick('local')"
     >
-      <AppIcon name="folder" :size="13" />
-      本地
+      LOCAL · 本地
     </button>
     <button
-      class="flex h-7 items-center gap-1.5 rounded px-3 text-xs font-medium transition"
-      :class="[
-        modelValue === 'openlist'
-          ? 'bg-[var(--accent-soft)] text-accent'
-          : 'text-muted hover:text-ink',
-        !hasOpenList ? 'cursor-not-allowed opacity-45' : '',
-      ]"
-      :disabled="disabled"
+      type="button"
+      class="seg-btn"
+      :class="{ on: modelValue === 'openlist' }"
+      :disabled="disabled || !hasOpenList"
       :title="hasOpenList ? '使用 OpenList 云盘' : '尚未配置 OpenList 实例'"
       @click="pick('openlist')"
     >
-      <AppIcon name="cloud" :size="13" />
-      OpenList
+      OPENLIST · 云盘
     </button>
   </div>
 </template>

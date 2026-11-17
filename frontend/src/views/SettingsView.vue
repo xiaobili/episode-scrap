@@ -7,9 +7,11 @@ import BaseModal from '@/components/BaseModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorBanner from '@/components/ErrorBanner.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import SelectMenu from '@/components/SelectMenu.vue'
 import TemplateEditor from '@/components/TemplateEditor.vue'
+import type { SlateRow } from '@/components/ui-types'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
 import type { OpenListInstance, Settings, StrmRule } from '@/types'
@@ -72,6 +74,27 @@ const jellyfinTesting = ref(false)
 const hydrated = ref(false)
 
 const selected = computed(() => tabs.find((item) => item.key === tab.value))
+
+const version = __APP_VERSION__
+
+const slate = computed<SlateRow[]>(() => [
+  {
+    label: 'TMDB',
+    value: store.settings?.has_tmdb_key ? 'CONFIGURED' : 'MISSING',
+    tone: store.settings?.has_tmdb_key ? 'green' : 'amber',
+  },
+  { label: 'OPENLIST', value: `${instances.value.length} INSTANCES` },
+  {
+    label: 'JELLYFIN',
+    value:
+      store.settings?.jellyfin_url && store.settings?.has_jellyfin_key
+        ? 'CONFIGURED'
+        : 'MISSING',
+    tone:
+      store.settings?.jellyfin_url && store.settings?.has_jellyfin_key ? 'green' : 'amber',
+  },
+  { label: 'VERSION', value: `v${version}` },
+])
 
 function hydrate(settings: Settings) {
   if (hydrated.value) return
@@ -253,6 +276,12 @@ function addStrmRule() {
   })
 }
 
+function setStrmMode(value: string) {
+  if (value === 'alongside' || value === 'library' || value === 'mirror') {
+    strmMode.value = value
+  }
+}
+
 function removeStrmRule(index: number) {
   strmRules.value.splice(index, 1)
 }
@@ -334,169 +363,165 @@ onMounted(loadInstances)
 
 <template>
   <div>
-    <header class="mb-5">
-      <h1 class="text-2xl font-semibold leading-8 tracking-tight text-ink">设置</h1>
-      <p class="mt-1 text-[13px] text-muted">配置媒体源、云盘实例与命名规则</p>
-    </header>
+    <PageHeader
+      ghost="07"
+      kicker="CONFIG · SETTINGS"
+      title="设置"
+      title-en="SETTINGS"
+      description="媒体源、OpenList 实例、命名模板、STRM 与 Jellyfin 集成配置。"
+      :slate="slate"
+    />
 
     <ErrorBanner v-if="error" class="mb-4" :message="error" />
 
-    <div class="grid items-start gap-5 lg:grid-cols-[190px_minmax(0,1fr)]">
-      <nav class="panel flex gap-1 overflow-x-auto p-1.5 lg:flex-col lg:overflow-visible">
+    <div class="settings-grid">
+      <nav class="panel settings-tabs" aria-label="设置分组">
         <button
-          v-for="item in tabs"
+          v-for="(item, index) in tabs"
           :key="item.key"
-          class="flex h-9 flex-none items-center gap-2 whitespace-nowrap rounded px-2.5 text-[13px] transition lg:w-full"
-          :class="
-            tab === item.key
-              ? 'bg-[var(--accent-soft)] font-medium text-ink'
-              : 'text-muted hover:bg-[var(--bg-elevated)] hover:text-ink'
-          "
+          class="stab"
+          :class="{ on: tab === item.key }"
           @click="tab = item.key"
         >
-          <AppIcon :name="item.icon" :size="15" class="opacity-80" />
+          <span class="num">{{ String(index + 1).padStart(2, '0') }}</span>
           {{ item.label }}
         </button>
       </nav>
 
       <div class="min-w-0">
-        <section v-if="tab === 'providers'" class="panel p-4 md:p-5">
-          <h2 class="text-lg font-semibold text-ink">媒体源</h2>
-          <p class="mt-1 text-xs text-muted">刮削与季集信息依赖媒体源 API。</p>
+        <section v-if="tab === 'providers'" class="panel set-section">
+          <div class="set-title">
+            <h3><AppIcon name="sparkles" :size="15" class="text-amber" />媒体源</h3>
+            <StatusTag
+              :status="store.providers.some((provider) => provider.configured) ? 'success' : 'pending'"
+              :text="store.providers.some((provider) => provider.configured) ? 'CONNECTED' : 'MISSING'"
+            />
+          </div>
+          <p class="text-[11.5px] text-muted">刮削与季集信息依赖媒体源 API。</p>
 
-          <div class="mt-4 divide-y divide-line rounded-lg border border-line">
-            <div
-              v-for="provider in store.providers"
-              :key="provider.name"
-              class="flex flex-wrap items-center gap-3 px-3.5 py-3"
-            >
-              <span class="flex h-8 w-8 flex-none items-center justify-center rounded-md bg-[var(--bg-elevated)] text-accent">
-                <AppIcon name="sparkles" :size="15" />
+          <div class="mt-4">
+            <div v-for="provider in store.providers" :key="provider.name" class="instance">
+              <span class="cloud-ic"><AppIcon name="sparkles" :size="15" /></span>
+              <span class="body">
+                <b>{{ provider.label }}</b>
+                <small>{{ provider.configured ? '已配置，可用于搜索与匹配' : '未配置 API Key' }}</small>
               </span>
-              <div class="min-w-0 flex-1">
-                <p class="text-[13px] font-medium text-ink">{{ provider.label }}</p>
-                <p class="text-[11.5px] text-faint">
-                  {{ provider.configured ? '已配置，可用于搜索与匹配' : '未配置 API Key' }}
-                </p>
-              </div>
-              <StatusTag :status="provider.configured ? 'success' : 'pending'" :text="provider.configured ? '已配置' : '未配置'" />
+              <StatusTag
+                :status="provider.configured ? 'success' : 'pending'"
+                :text="provider.configured ? '已配置' : '未配置'"
+              />
             </div>
 
-            <div v-if="store.providers.length === 0" class="px-3.5 py-6 text-center text-xs text-faint">
+            <div v-if="store.providers.length === 0" class="py-6 text-center text-xs text-faint">
               暂无可用媒体源
             </div>
           </div>
 
-          <div class="mt-4">
-            <label class="label">TMDB API Key</label>
-            <div class="flex gap-2">
+          <div class="mt-4 field">
+            <label>TMDB API Key <span>TMDB v3</span></label>
+            <div class="input-group">
+              <AppIcon name="eye" :size="14" />
               <input
                 v-model="tmdbKey"
                 type="password"
-                class="input font-mono text-xs"
                 :placeholder="
                   store.settings?.has_tmdb_key ? '已保存，输入新 Key 可覆盖' : '填写 TMDB API Key'
                 "
                 autocomplete="off"
               />
-              <button class="btn btn-primary flex-none" :disabled="saving" @click="saveTmdbKey">
-                保存
-              </button>
+              <button class="btn btn-sm btn-amber" :disabled="saving" @click="saveTmdbKey">保存</button>
             </div>
-            <p class="mt-1.5 text-[11.5px] text-faint">
+            <p class="mt-1.5 text-[11px] text-faint">
               Key 仅保存在服务端，前端不会回显已保存的内容。
             </p>
           </div>
         </section>
 
-        <section v-else-if="tab === 'openlist'" class="panel p-4 md:p-5">
-          <div class="flex flex-wrap items-center gap-2">
-            <div class="min-w-0 flex-1">
-              <h2 class="text-lg font-semibold text-ink">OpenList 数据源</h2>
-              <p class="mt-1 text-xs text-muted">管理云盘实例，扫描与重命名将通过这些实例执行。</p>
-            </div>
-            <button class="btn btn-primary" @click="openCreate">
-              <AppIcon name="plus" :size="14" />
+        <section v-else-if="tab === 'openlist'" class="panel set-section">
+          <div class="set-title">
+            <h3><AppIcon name="cloud" :size="15" class="text-info" />OpenList 实例</h3>
+            <button class="btn btn-sm btn-amber" @click="openCreate">
+              <AppIcon name="plus" :size="13" />
               新增实例
             </button>
           </div>
 
-          <div v-if="instancesLoading" class="mt-4 space-y-2">
-            <div v-for="index in 2" :key="index" class="h-[86px] animate-pulse rounded-lg border border-line bg-[var(--bg-elevated)]" />
+          <div v-if="instancesLoading" class="space-y-2">
+            <div v-for="index in 2" :key="index" class="instance">
+              <span class="h-8 w-8 animate-pulse rounded-md bg-[var(--surface-2)]" />
+              <span class="h-3 flex-1 animate-pulse rounded bg-[var(--surface-2)]" />
+            </div>
           </div>
 
-          <div v-else-if="instances.length === 0" class="mt-4 rounded-lg border border-dashed border-line-strong">
+          <div v-else-if="instances.length === 0">
             <EmptyState
               icon="cloud"
               title="还没有 OpenList 实例"
               description="添加实例后即可在扫描页选择云盘目录。"
             >
-              <button class="btn btn-primary" @click="openCreate">
+              <button class="btn btn-amber" @click="openCreate">
                 <AppIcon name="plus" :size="14" />
                 新增实例
               </button>
             </EmptyState>
           </div>
 
-          <div v-else class="mt-4 grid gap-2.5 xl:grid-cols-2">
-            <div
-              v-for="instance in instances"
-              :key="instance.id"
-              class="rounded-lg border border-line bg-base/40 px-3.5 py-3"
-            >
-              <div class="flex items-start gap-2">
-                <div class="min-w-0 flex-1">
-                  <p class="truncate text-[13px] font-medium text-ink">{{ instance.name }}</p>
-                  <p class="mt-0.5 truncate font-mono text-[11.5px] text-muted">
-                    {{ instance.base_url }}
-                  </p>
-                  <p class="mt-0.5 truncate font-mono text-[11px] text-accent/80">
-                    挂载 {{ instance.mount_path || '/' }}
-                  </p>
-                  <p class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-faint">
-                    <span>用户 {{ instance.username || '—' }}</span>
-                    <span>超时 {{ instance.timeout }}s</span>
-                    <span>并发 {{ instance.concurrency }}</span>
-                  </p>
-                </div>
-                <StatusTag :status="testState[instance.id]?.ok ? 'success' : 'pending'" :text="testState[instance.id] ? (testState[instance.id].ok ? '已连接' : '连接失败') : '未验证'" />
-              </div>
-
-              <p
-                v-if="testState[instance.id] && !testState[instance.id].ok"
-                class="mt-1.5 break-words text-[11px] text-danger"
-              >
-                {{ testState[instance.id].message }}
-              </p>
-
-              <div class="mt-2.5 flex items-center gap-1.5 border-t border-line pt-2.5">
+          <div v-else>
+            <div v-for="instance in instances" :key="instance.id" class="instance">
+              <span class="cloud-ic"><AppIcon name="cloud" :size="15" /></span>
+              <span class="body">
+                <b>{{ instance.name }}</b>
+                <small>
+                  {{ instance.base_url }} · {{ instance.username || '—' }} · {{ instance.timeout }}s /
+                  并发 {{ instance.concurrency }}
+                </small>
+                <small>挂载 {{ instance.mount_path || '/' }}</small>
+                <small
+                  v-if="testState[instance.id] && !testState[instance.id].ok"
+                  class="text-danger"
+                >
+                  {{ testState[instance.id].message }}
+                </small>
+              </span>
+              <StatusTag
+                :status="testState[instance.id]?.ok ? 'success' : 'pending'"
+                :text="
+                  testState[instance.id]
+                    ? testState[instance.id].ok
+                      ? '已连接'
+                      : '连接失败'
+                    : '未验证'
+                "
+              />
+              <span class="actions">
                 <button
                   class="btn btn-xs"
                   :disabled="testingId === instance.id"
                   @click="testConnection(instance)"
                 >
                   <AppIcon name="refresh" :size="12" :spin="testingId === instance.id" />
-                  测试连接
+                  测试
                 </button>
                 <button class="btn btn-xs btn-ghost" @click="openEdit(instance)">编辑</button>
-                <button class="btn btn-xs btn-danger ml-auto" @click="deleteTarget = instance">
-                  删除
-                </button>
-              </div>
+                <button class="btn btn-xs btn-danger" @click="deleteTarget = instance">删除</button>
+              </span>
+            </div>
+
+            <div class="warn-note">
+              <AppIcon name="alert" :size="14" />
+              <span>删除实例前需确认无任务引用；密码字段仅提交，不回显。</span>
             </div>
           </div>
         </section>
 
-        <section v-else-if="tab === 'template'" class="panel p-4 md:p-5">
-          <div class="flex flex-wrap items-start gap-2">
-            <div class="min-w-0 flex-1">
-              <h2 class="text-lg font-semibold text-ink">命名模板</h2>
-              <p class="mt-1 text-xs text-muted">
-                用于生成最终文件名，数字变量支持 {season:02d} 形式的补零。
-              </p>
-            </div>
-            <button class="btn btn-primary" :disabled="saving" @click="saveTemplate">保存模板</button>
+        <section v-else-if="tab === 'template'" class="panel set-section">
+          <div class="set-title">
+            <h3><AppIcon name="rename" :size="15" class="text-amber" />命名模板</h3>
+            <button class="btn btn-sm btn-amber" :disabled="saving" @click="saveTemplate">保存模板</button>
           </div>
+          <p class="text-[11.5px] text-muted">
+            用于生成最终文件名，数字变量支持 {season:02d} 形式的补零。
+          </p>
 
           <div class="mt-4">
             <TemplateEditor v-model="templateDraft" :sample="sample" />
@@ -531,55 +556,67 @@ onMounted(loadInstances)
           </div>
         </section>
 
-        <section v-else-if="tab === 'strm'" class="panel p-4 md:p-5">
-          <div class="flex flex-wrap items-start gap-2">
-            <div class="min-w-0 flex-1">
-              <h2 class="text-lg font-semibold text-ink">STRM</h2>
-              <p class="mt-1 text-xs text-muted">
-                重命名时勾选「生成 STRM」，为每个视频生成指向媒体源的 .strm 文件。
-              </p>
-            </div>
-            <button class="btn btn-primary" :disabled="saving" @click="saveStrm">保存设置</button>
+        <section v-else-if="tab === 'strm'" class="panel set-section">
+          <div class="set-title">
+            <h3><AppIcon name="film" :size="15" class="text-info" />STRM 输出</h3>
+            <button class="btn btn-sm btn-amber" :disabled="saving" @click="saveStrm">保存设置</button>
           </div>
+          <p class="text-[11.5px] text-muted">
+            重命名时勾选「生成 STRM」，为每个视频生成指向媒体源的 .strm 文件。
+          </p>
 
-          <div class="mt-4">
-            <label class="label">URL 模板</label>
+          <div class="mt-4 field">
+            <label>链接模板 <span>URL TEMPLATE</span></label>
             <input
               v-model="strmTemplate"
-              class="input font-mono text-xs"
+              class="input mono"
               spellcheck="false"
               placeholder="{base_url}/d/{path}"
             />
-            <p class="mt-1.5 text-[11.5px] text-faint">
+            <p class="mt-1.5 text-[11px] text-faint">
               变量：{base_url} 数据源地址、{path} 视频路径（URL 编码）、{raw_path} 原始路径、{filename} 文件名。
             </p>
           </div>
 
-          <div class="mt-4 grid gap-3 sm:grid-cols-2">
-            <div>
-              <label class="label">输出方式</label>
-              <SelectMenu
-                v-model="strmMode"
-                class="h-9"
-                :options="[
-                  { value: 'alongside', label: '与视频同目录' },
-                  { value: 'library', label: '本地媒体库（剧名 / Season）' },
-                  { value: 'mirror', label: '独立目录镜像' },
+          <div class="mt-4">
+            <label class="field-label">输出方式 <span class="mono text-[8px] tracking-[0.16em] text-faint">OUTPUT MODE</span></label>
+            <div class="mode-grid mt-2">
+              <button
+                v-for="mode in [
+                  { value: 'alongside', title: 'ALONGSIDE', desc: '与视频同目录生成 STRM' },
+                  { value: 'library', title: 'LIBRARY', desc: '输出到统一媒体库目录' },
+                  { value: 'mirror', title: 'MIRROR', desc: '按源路径镜像到目标目录' },
                 ]"
-              />
+                :key="mode.value"
+                type="button"
+                class="mode"
+                :class="{ on: strmMode === mode.value }"
+                @click="setStrmMode(mode.value)"
+              >
+                <i />
+                <b>{{ mode.title }}</b>
+                <small>{{ mode.desc }}</small>
+              </button>
             </div>
-            <div>
-              <label class="label">目标目录（绝对路径）</label>
+          </div>
+
+          <div class="form-row mt-3">
+            <div class="field">
+              <label>目标目录 <span>TARGET DIR</span></label>
               <input
                 v-model="strmTargetDir"
-                class="input font-mono text-xs"
+                class="input mono"
                 :disabled="strmMode === 'alongside'"
                 placeholder="/data/media/strm"
                 spellcheck="false"
               />
             </div>
+            <div class="field">
+              <label>当前模式 <span>MODE</span></label>
+              <input class="input mono" :value="strmMode" disabled />
+            </div>
           </div>
-          <p class="mt-1.5 text-[11.5px] text-faint">
+          <p class="mt-1.5 text-[11px] text-faint">
             本地视频的 STRM 内容为视频绝对路径；OpenList 视频按上方 URL 模板生成。
           </p>
 
@@ -587,7 +624,7 @@ onMounted(loadInstances)
             <div class="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <h3 class="text-sm font-semibold text-ink">路径映射规则</h3>
-                <p class="mt-0.5 text-[11.5px] text-faint">
+                <p class="mt-0.5 text-[11px] text-faint">
                   按源路径最长前缀匹配，命中后按相对目录结构写入目标位置（目录不存在会自动创建），未命中时使用上方默认方式。
                 </p>
               </div>
@@ -598,7 +635,7 @@ onMounted(loadInstances)
 
             <div
               v-if="!strmRules.length"
-              class="mt-3 rounded-lg border border-dashed border-line-strong px-3 py-4 text-center text-xs text-faint"
+              class="mt-3 rounded-lg border border-dashed border-line-2 px-3 py-4 text-center text-xs text-faint"
             >
               暂无规则
             </div>
@@ -613,7 +650,7 @@ onMounted(loadInstances)
                   <label class="label">源路径前缀</label>
                   <input
                     v-model="rule.source"
-                    class="input font-mono text-xs"
+                    class="input mono"
                     placeholder="/cloud/美剧"
                     spellcheck="false"
                   />
@@ -640,7 +677,7 @@ onMounted(loadInstances)
                   <label class="label">目标目录</label>
                   <input
                     v-model="rule.target_dir"
-                    class="input font-mono text-xs"
+                    class="input mono"
                     placeholder="/strm/美剧"
                     spellcheck="false"
                   />
@@ -657,95 +694,105 @@ onMounted(loadInstances)
           </div>
         </section>
 
-        <section v-else-if="tab === 'jellyfin'" class="panel p-4 md:p-5">
-          <div class="flex flex-wrap items-start gap-2">
-            <div class="min-w-0 flex-1">
-              <h2 class="text-lg font-semibold text-ink">Jellyfin</h2>
-              <p class="mt-1 text-xs text-muted">
-                配置后可在「刷新」步骤中刷新指定的 Jellyfin 媒体库。
-              </p>
-            </div>
+        <section v-else-if="tab === 'jellyfin'" class="panel set-section">
+          <div class="set-title">
+            <h3><AppIcon name="server" :size="15" class="text-success" />Jellyfin</h3>
             <StatusTag
               :status="store.settings?.jellyfin_url && store.settings?.has_jellyfin_key ? 'success' : 'pending'"
               :text="store.settings?.jellyfin_url && store.settings?.has_jellyfin_key ? '已配置' : '未配置'"
             />
           </div>
+          <p class="text-[11.5px] text-muted">
+            配置后可在「刷新」步骤中刷新指定的 Jellyfin 媒体库。
+          </p>
 
-          <div class="mt-4">
-            <label class="label">服务器地址</label>
-            <input
-              v-model="jellyfinUrl"
-              class="input font-mono text-xs"
-              placeholder="http://192.168.1.10:8096"
-              spellcheck="false"
-            />
+          <div class="form-row mt-4">
+            <div class="field">
+              <label>服务器地址 <span>BASE URL</span></label>
+              <input
+                v-model="jellyfinUrl"
+                class="input mono"
+                placeholder="http://192.168.1.10:8096"
+                spellcheck="false"
+              />
+            </div>
+            <div class="field">
+              <label>API Key <span>API KEY</span></label>
+              <div class="input-group">
+                <AppIcon name="eye" :size="14" />
+                <input
+                  v-model="jellyfinKey"
+                  type="password"
+                  :placeholder="
+                    store.settings?.has_jellyfin_key
+                      ? '已保存，输入新 Key 可覆盖'
+                      : '在 Jellyfin 控制台 → API 密钥中创建'
+                  "
+                  autocomplete="off"
+                />
+              </div>
+            </div>
           </div>
+          <p class="mt-1.5 text-[11px] text-faint">
+            Key 仅保存在服务端，前端不会回显已保存的内容。
+          </p>
 
-          <div class="mt-4">
-            <label class="label">API Key</label>
-            <input
-              v-model="jellyfinKey"
-              type="password"
-              class="input font-mono text-xs"
-              :placeholder="
-                store.settings?.has_jellyfin_key ? '已保存，输入新 Key 可覆盖' : '在 Jellyfin 控制台 → API 密钥中创建'
-              "
-              autocomplete="off"
-            />
-            <p class="mt-1.5 text-[11.5px] text-faint">
-              Key 仅保存在服务端，前端不会回显已保存的内容。
-            </p>
-          </div>
-
-          <div class="mt-5 flex items-center justify-end gap-2">
+          <div class="form-actions">
             <button
-              class="btn"
+              class="btn btn-sm"
               :disabled="jellyfinTesting || !store.settings?.jellyfin_url || !store.settings?.has_jellyfin_key"
               title="使用已保存的配置测试连接"
               @click="testJellyfin"
             >
-              <AppIcon name="refresh" :size="14" :spin="jellyfinTesting" />
+              <AppIcon name="refresh" :size="13" :spin="jellyfinTesting" />
               测试连接
             </button>
-            <button class="btn btn-primary" :disabled="saving" @click="saveJellyfin">保存设置</button>
+            <button class="btn btn-sm btn-amber" :disabled="saving" @click="saveJellyfin">
+              保存设置
+            </button>
           </div>
         </section>
 
-        <section v-else class="panel p-4 md:p-5">
-          <h2 class="text-lg font-semibold text-ink">通用</h2>
-          <p class="mt-1 text-xs text-muted">本地目录白名单与 OpenList 请求参数。</p>
+        <section v-else class="panel set-section">
+          <div class="set-title">
+            <h3><AppIcon name="settings" :size="15" class="text-muted" />通用</h3>
+            <span class="sub">ADVANCED</span>
+          </div>
+          <p class="text-[11.5px] text-muted">本地目录白名单与 OpenList 请求参数。</p>
 
-          <div class="mt-4">
-            <label class="label">允许访问的本地目录（每行一个绝对路径）</label>
+          <div class="field mt-4">
+            <label>本地目录白名单 <span>ALLOWED PATHS · 每行一个</span></label>
             <textarea
               v-model="allowedPaths"
-              class="textarea font-mono text-xs"
+              class="textarea"
               rows="5"
               placeholder="/data/media/tv"
               spellcheck="false"
             />
-            <p class="mt-1.5 text-[11.5px] text-faint">
+            <p class="mt-1.5 text-[11px] text-faint">
               扫描页的本地路径只能位于白名单目录之内。
             </p>
           </div>
 
-          <div class="mt-4 grid gap-3 sm:grid-cols-3">
-            <div>
-              <label class="label">OpenList 并发</label>
-              <input v-model.number="concurrency" type="number" min="1" max="16" class="input font-mono" />
+          <div class="form-row three mt-3">
+            <div class="field">
+              <label>OpenList 并发 <span>CONCURRENCY</span></label>
+              <input v-model.number="concurrency" type="number" min="1" max="16" class="input mono" />
             </div>
-            <div>
-              <label class="label">请求超时（秒）</label>
-              <input v-model.number="timeout" type="number" min="5" max="300" class="input font-mono" />
+            <div class="field">
+              <label>请求超时（秒） <span>TIMEOUT</span></label>
+              <input v-model.number="timeout" type="number" min="5" max="300" class="input mono" />
             </div>
-            <div>
-              <label class="label">失败重试次数</label>
-              <input v-model.number="retry" type="number" min="0" max="5" class="input font-mono" />
+            <div class="field">
+              <label>失败重试次数 <span>RETRY</span></label>
+              <input v-model.number="retry" type="number" min="0" max="5" class="input mono" />
             </div>
           </div>
 
-          <div class="mt-5 flex justify-end">
-            <button class="btn btn-primary" :disabled="saving" @click="saveGeneral">保存设置</button>
+          <div class="form-actions">
+            <button class="btn btn-sm btn-amber" :disabled="saving" @click="saveGeneral">
+              保存设置
+            </button>
           </div>
         </section>
 

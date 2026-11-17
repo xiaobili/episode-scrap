@@ -14,7 +14,7 @@ withDefaults(
 <template>
   <div class="flex flex-col items-center justify-center px-6 py-16 text-center">
     <span
-      class="mb-4 grid h-14 w-14 place-items-center rounded-xl border border-line bg-[var(--bg-elevated)] text-muted"
+      class="mb-4 grid h-14 w-14 place-items-center rounded-xl border border-line bg-[var(--surface-2)] text-amber"
     >
       <AppIcon :name="icon" :size="26" :stroke="1.5" />
     </span>

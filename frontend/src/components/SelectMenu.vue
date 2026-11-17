@@ -198,7 +198,7 @@ onBeforeUnmount(() => {
     >
       <span
         class="min-w-0 flex-1 truncate"
-        :class="!selectedLabel ? 'text-[var(--text-tertiary)]' : ''"
+        :class="!selectedLabel ? 'text-[var(--faint)]' : ''"
       >
         {{ selectedLabel || placeholder }}
       </span>
@@ -214,7 +214,7 @@ onBeforeUnmount(() => {
       <div
         v-if="open"
         ref="panelEl"
-        class="fixed z-[100] overflow-hidden rounded-lg border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-[var(--shadow-float)]"
+        class="fixed z-[100] overflow-hidden rounded-lg border border-[var(--line-2)] bg-[var(--surface-2)] shadow-[var(--shadow-float)]"
         :style="{
           top: `${rect.top}px`,
           left: `${rect.left}px`,
@@ -225,7 +225,7 @@ onBeforeUnmount(() => {
         role="listbox"
       >
         <template v-if="resolvedOptions.length === 0">
-          <div class="px-3 py-2 text-xs text-[var(--text-tertiary)]">无选项</div>
+          <div class="px-3 py-2 text-xs text-[var(--faint)]">无选项</div>
         </template>
         <template v-else>
           <button
@@ -235,12 +235,12 @@ onBeforeUnmount(() => {
             class="group flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[13px] transition-colors"
             :class="[
               opt.disabled
-                ? 'cursor-not-allowed text-[var(--text-tertiary)] opacity-50'
-                : 'hover:bg-[var(--bg-surface)]',
-              highlighted === idx && !opt.disabled ? 'bg-[var(--bg-surface)]' : '',
+                ? 'cursor-not-allowed text-[var(--faint)] opacity-50'
+                : 'hover:bg-[rgba(240,160,44,.08)]',
+              highlighted === idx && !opt.disabled ? 'bg-[rgba(240,160,44,.08)]' : '',
               modelValue === opt.value && !hasPlaceholderOption
-                ? 'font-medium text-[var(--accent)]'
-                : 'text-[var(--text-primary)]',
+                ? 'font-medium text-[var(--amber)]'
+                : 'text-[var(--ink)]',
             ]"
             role="option"
             :aria-selected="modelValue === opt.value"
@@ -252,7 +252,7 @@ onBeforeUnmount(() => {
               v-if="modelValue === opt.value && !opt.disabled"
               name="check"
               :size="13"
-              class="flex-none text-[var(--accent)]"
+              class="flex-none text-[var(--amber)]"
             />
           </button>
         </template>

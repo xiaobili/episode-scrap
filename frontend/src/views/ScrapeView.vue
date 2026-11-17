@@ -7,11 +7,14 @@ import AppIcon from '@/components/AppIcon.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import EpisodeMapper from '@/components/EpisodeMapper.vue'
 import ErrorBanner from '@/components/ErrorBanner.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import Pager from '@/components/Pager.vue'
 import ShowCard from '@/components/ShowCard.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import SelectMenu from '@/components/SelectMenu.vue'
+import type { SlateRow } from '@/components/ui-types'
 import { usePagination } from '@/composables/usePagination'
+import { useRecentSearches } from '@/composables/useRecentSearches'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
 import type { Episode, Show, ShowDetail } from '@/types'
@@ -60,6 +63,27 @@ const mappingCount = computed(() =>
   }).length,
 )
 
+const { items: recentSearches, push: pushRecent } = useRecentSearches()
+
+const slate = computed<SlateRow[]>(() => [
+  { label: 'PROVIDER', value: provider.value.toUpperCase() },
+  { label: 'MATCHED', value: `${mappingCount.value}/${targetFiles.value.length}`, tone: 'amber' },
+  { label: 'SEASON', value: season.value === null ? '—' : `SEASON ${String(season.value).padStart(2, '0')}` },
+  {
+    label: 'STATUS',
+    value:
+      targetFiles.value.length - mappingCount.value > 0
+        ? `${targetFiles.value.length - mappingCount.value} NEED REVIEW`
+        : 'READY',
+    tone: targetFiles.value.length === mappingCount.value ? 'green' : 'amber',
+  },
+])
+
+function useRecent(value: string) {
+  query.value = value
+  void search()
+}
+
 function messageOf(err: unknown) {
   return err instanceof Error ? err.message : '请求失败'
 }
@@ -76,6 +100,7 @@ async function search() {
   searched.value = true
   try {
     results.value = await api.search({ query: keyword, provider: provider.value })
+    pushRecent(keyword)
   } catch (err) {
     error.value = messageOf(err)
     results.value = []
@@ -185,118 +210,102 @@ onMounted(() => {
 
 <template>
   <div>
-    <header class="mb-4">
-      <h1 class="text-2xl font-semibold leading-8 tracking-tight text-ink">刮削</h1>
-      <p class="mt-1 text-[13px] text-muted">搜索剧集并建立季集匹配关系</p>
-    </header>
+    <PageHeader
+      ghost="03"
+      kicker="STEP 03 · SCRAPE"
+      title="刮削"
+      title-en="SCRAPE"
+      description="从 TMDB 搜索剧集，自动对齐本地季集与目标剧集，生成 NFO 与海报。"
+      :slate="slate"
+    />
 
-    <div class="mb-4 flex flex-wrap items-center gap-2">
-      <div class="relative min-w-[220px] flex-1 sm:max-w-md">
-        <AppIcon
-          name="search"
-          :size="14"
-          class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
-        />
-        <input
-          v-model="query"
-          class="input pl-8"
-          placeholder="输入剧名，回车搜索"
-          spellcheck="false"
-          @keydown.enter="search"
-        />
+    <section class="panel">
+      <div class="scan-controls" style="padding: 12px 14px">
+        <div class="controls-main scrape-search" style="margin-top: 0">
+          <div class="input-group">
+            <AppIcon name="search" :size="14" />
+            <input
+              v-model="query"
+              placeholder="输入剧名，回车搜索"
+              spellcheck="false"
+              aria-label="搜索剧名"
+              @keydown.enter="search"
+            />
+          </div>
+
+          <div class="input-group" style="width: 140px">
+            <AppIcon name="film" :size="14" />
+            <SelectMenu
+              v-model="provider"
+              class="!h-[30px] !w-full !border-0 !bg-transparent !px-0"
+              :options="providers.map((p) => ({ value: p.name, label: p.label }))"
+            />
+          </div>
+
+          <button class="btn" :disabled="searching" @click="search">
+            <AppIcon name="search" :size="14" :spin="searching" />
+            搜索
+          </button>
+          <button
+            class="btn btn-amber"
+            :disabled="matching || !chosen || parsedFiles.length === 0"
+            @click="runMatch(true)"
+          >
+            <AppIcon name="sparkles" :size="14" :spin="matching" />
+            自动匹配全部
+          </button>
+        </div>
       </div>
+    </section>
 
-      <SelectMenu
-        v-model="provider"
-        class="!w-auto min-w-[120px]"
-        :options="providers.map((p) => ({ value: p.name, label: p.label }))"
-      />
+    <ErrorBanner v-if="error" class="mt-3" :message="error" />
 
-      <button class="btn" :disabled="searching" @click="search">
-        <AppIcon name="search" :size="14" :spin="searching" />
-        搜索
-      </button>
-      <button
-        class="btn btn-primary"
-        :disabled="matching || !chosen || parsedFiles.length === 0"
-        @click="runMatch(true)"
-      >
-        <AppIcon name="sparkles" :size="14" :spin="matching" />
-        自动匹配全部
-      </button>
-    </div>
-
-    <ErrorBanner v-if="error" class="mb-4" :message="error" />
-
-    <div
-      v-if="!configured"
-      class="mb-4 flex items-center gap-2 rounded-lg border border-[rgba(245,184,73,.35)] bg-[rgba(245,184,73,.08)] px-3.5 py-2.5 text-[13px] text-muted"
-    >
-      <AppIcon name="alert" :size="15" class="flex-none text-warning" />
+    <div v-if="!configured" class="warn-note mt-3">
+      <AppIcon name="alert" :size="15" />
       <span class="flex-1">尚未配置 TMDB API Key，无法搜索。请前往设置填写。</span>
       <button class="btn btn-sm flex-none" @click="router.push('/settings')">去设置</button>
     </div>
 
-    <div v-if="parsedFiles.length === 0" class="panel">
+    <div v-if="parsedFiles.length === 0" class="panel mt-3">
       <EmptyState
         icon="scrape"
         title="没有可刮削的文件"
         description="请先在解析页确认文件名解析结果，再回来匹配剧集。"
       >
-        <button class="btn btn-primary" @click="router.push('/parse')">
+        <button class="btn btn-amber" @click="router.push('/parse')">
           <AppIcon name="parse" :size="14" />
           去解析
         </button>
       </EmptyState>
     </div>
 
-    <div v-else class="grid items-start gap-4 xl:grid-cols-[280px_minmax(0,1fr)_360px]">
-      <section class="panel overflow-hidden">
-        <div class="flex items-center justify-between border-b border-line px-3 py-2">
-          <span class="text-xs font-medium text-muted">
-            待匹配 <span class="font-mono text-ink">{{ parsedFiles.length }}</span>
-          </span>
-          <button
-            v-if="store.selectedIds.length"
-            class="text-[11px] text-accent hover:underline"
-            @click="store.clearSelection"
-          >
-            清空已选
-          </button>
+    <div v-else class="scrape-grid">
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">PENDING <b>待匹配</b></span>
+          <span class="mono dim" style="font-size: 9.5px">{{ parsedFiles.length }}</span>
         </div>
-        <div class="max-h-[calc(100vh-300px)] overflow-y-auto">
-          <div
-            v-for="file in pageItems"
-            :key="file.id"
-            class="flex h-12 cursor-pointer items-center gap-2 border-b border-line/50 px-3 transition last:border-0"
-            :class="
-              store.selectedSet.has(file.id)
-                ? 'bg-[var(--accent-soft)]'
-                : 'hover:bg-[var(--bg-elevated)]'
-            "
-            @click="toggle(file.id)"
-          >
+
+        <div>
+          <label v-for="file in pageItems" :key="file.id" class="pick-row">
             <input
               type="checkbox"
-              class="h-3.5 w-3.5 flex-none accent-accent"
               :checked="store.selectedSet.has(file.id)"
-              @click.stop
+              :aria-label="`选择 ${file.original_name}`"
               @change="toggle(file.id)"
             />
-            <span class="min-w-0 flex-1">
-              <span class="block truncate font-mono text-xs text-ink">
+            <span class="pick-main">
+              <b>
                 {{
                   file.parsed?.episode != null
                     ? `S${String(file.parsed.season ?? 1).padStart(2, '0')}E${String(file.parsed.episode).padStart(2, '0')}`
                     : '未知集'
                 }}
-              </span>
-              <span class="block truncate text-[11px] text-faint">
-                {{ file.parsed?.episode_title ?? file.parsed?.title }}
-              </span>
+              </b>
+              <small>{{ file.parsed?.episode_title ?? file.parsed?.title ?? file.original_name }}</small>
             </span>
             <StatusTag :status="file.status" />
-          </div>
+          </label>
         </div>
 
         <Pager
@@ -308,24 +317,23 @@ onMounted(() => {
         />
       </section>
 
-      <section class="panel overflow-hidden">
-        <div class="flex items-center justify-between border-b border-line px-3 py-2">
-          <span class="text-xs font-medium text-muted">
-            候选剧集
-            <span class="ml-1 font-mono text-ink">{{ results.length }}</span>
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">CANDIDATES <b>候选剧集</b></span>
+          <span class="panel-side mono dim" style="font-size: 9.5px">
+            {{ results.length }} RESULTS
           </span>
-          <span v-if="searched && !searching" class="text-[11px] text-faint">来源 {{ provider.toUpperCase() }}</span>
         </div>
 
-        <div v-if="searching" class="grid gap-2 p-3 sm:grid-cols-2">
+        <div v-if="searching" class="show-grid">
           <div
             v-for="index in 4"
             :key="index"
-            class="h-[94px] animate-pulse rounded-lg border border-line bg-[var(--bg-elevated)]"
+            class="h-[94px] animate-pulse rounded-lg border border-line bg-[var(--surface-2)]"
           />
         </div>
 
-        <div v-else-if="results.length" class="grid max-h-[calc(100vh-300px)] gap-2 overflow-y-auto p-3 sm:grid-cols-2">
+        <div v-else-if="results.length" class="show-grid" style="max-height: calc(100vh - 300px); overflow-y: auto">
           <ShowCard
             v-for="show in results"
             :key="show.id"
@@ -345,12 +353,32 @@ onMounted(() => {
               : '在顶部输入剧名，选择正确的剧集后即可自动对齐季集。'
           "
         />
+
+        <div v-if="recentSearches.length" class="recent-searches">
+          <span class="lbl">RECENT</span>
+          <button
+            v-for="item in recentSearches"
+            :key="item"
+            type="button"
+            @click="useRecent(item)"
+          >
+            {{ item }}
+          </button>
+        </div>
+
+        <div style="padding: 10px 12px">
+          <div class="legend">
+            <span><i style="background: var(--amber)" />已选择</span>
+            <span><i style="background: var(--line-2)" />hover 预览</span>
+            <span style="margin-left: auto">ENTER 选择</span>
+          </div>
+        </div>
       </section>
 
-      <section class="panel flex flex-col overflow-hidden">
-        <div class="flex items-center justify-between border-b border-line px-3 py-2">
-          <span class="text-xs font-medium text-muted">匹配关系</span>
-          <span class="font-mono text-[11px] text-faint">
+      <section class="panel flex flex-col">
+        <div class="panel-head">
+          <span class="panel-title">MAPPING <b>匹配关系</b></span>
+          <span class="mono dim" style="font-size: 9.5px">
             {{ mappingCount }}/{{ targetFiles.length }}
           </span>
         </div>
@@ -360,28 +388,33 @@ onMounted(() => {
         </div>
 
         <template v-else>
-          <div class="flex items-start gap-3 border-b border-line px-3 py-3">
-            <span
-              class="grid h-[66px] w-11 flex-none place-items-center overflow-hidden rounded border border-line bg-base text-faint"
-            >
+          <div class="map-head">
+            <span class="poster" style="width: 42px">
               <img
                 v-if="chosen.poster_url"
                 :src="chosen.poster_url"
                 :alt="chosen.title"
                 class="h-full w-full object-cover"
               />
-              <AppIcon v-else name="film" :size="16" />
+              <span v-else class="poster-art">
+                <span class="mark" style="font-size: 24px">
+                  {{ chosen.title.slice(0, 2).toUpperCase() }}
+                </span>
+                <span class="code">{{ chosen.year ?? '' }}</span>
+              </span>
             </span>
-            <div class="min-w-0 flex-1">
-              <p class="truncate text-[13px] font-medium text-ink">{{ chosen.title }}</p>
-              <p class="mt-0.5 text-[11.5px] text-faint">
-                {{ chosen.year ?? '—' }} · {{ chosen.seasons_count }} 季
-              </p>
-              <div class="mt-1.5 flex items-center gap-1.5">
-                <label class="text-[11px] text-muted">季</label>
+            <div class="map-title">
+              <h4>{{ chosen.title }}</h4>
+              <div class="en">{{ chosen.original_title || chosen.title }}</div>
+              <div class="meta">
+                {{ chosen.year ?? '—' }} · ★ {{ chosen.rating?.toFixed(1) ?? '—' }} ·
+                {{ chosen.seasons_count }} 季
+              </div>
+              <div class="select-inline">
+                <label>SEASON</label>
                 <SelectMenu
                   v-model="season"
-                  class="h-7 !w-auto min-w-[100px] text-xs"
+                  class="!h-[24px] !w-auto min-w-[100px] text-xs"
                   :options="seasons.map((s) => ({ value: s.season, label: s.name || `第 ${s.season} 季` }))"
                 />
               </div>
@@ -396,13 +429,13 @@ onMounted(() => {
               :season="season"
             />
             <div v-else-if="detailLoading" class="space-y-2 p-3">
-              <div v-for="index in 5" :key="index" class="h-9 animate-pulse rounded bg-[var(--bg-elevated)]" />
+              <div v-for="index in 5" :key="index" class="h-9 animate-pulse rounded bg-[var(--surface-2)]" />
             </div>
             <EmptyState v-else icon="film" title="该季暂无剧集信息" description="请切换季或换一部剧集。" />
           </div>
 
-          <div class="border-t border-line px-3 py-2.5">
-            <button class="btn btn-primary w-full" :disabled="matching" @click="runMatch(false)">
+          <div class="map-foot">
+            <button class="btn btn-amber" :disabled="matching" @click="runMatch(false)">
               <AppIcon v-if="matching" name="loader" :size="14" spin />
               确认匹配 {{ targetFiles.length }} 项
             </button>

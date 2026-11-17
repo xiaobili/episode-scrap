@@ -28,7 +28,7 @@ const emit = defineEmits<{ confirm: []; cancel: [] }>()
       </button>
       <button
         class="btn"
-        :class="danger ? 'btn-danger' : 'btn-primary'"
+        :class="danger ? 'btn-danger' : 'btn-amber'"
         :disabled="loading"
         @click="emit('confirm')"
       >

@@ -4,9 +4,9 @@ import { computed } from 'vue'
 const props = defineProps<{ value: number }>()
 
 const level = computed(() => {
-  if (props.value >= 85) return { label: '高', tone: 'tag-success' }
-  if (props.value >= 60) return { label: '待确认', tone: 'tag-warning' }
-  return { label: '低', tone: 'tag-danger' }
+  if (props.value >= 85) return { label: '高', tone: 'tag-ok' }
+  if (props.value >= 60) return { label: '待确认', tone: 'tag-warn' }
+  return { label: '低', tone: 'tag-bad' }
 })
 </script>
 

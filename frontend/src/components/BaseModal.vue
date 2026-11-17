@@ -41,33 +41,26 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div
-        v-if="open"
-        class="fixed inset-0 z-[90] grid place-items-center overflow-y-auto bg-black/60 p-4 backdrop-blur-[2px]"
-        @mousedown.self="emit('close')"
-      >
+      <div v-if="open" class="modal open" @mousedown.self="emit('close')">
         <div
-          class="panel my-auto w-full overflow-hidden shadow-[var(--shadow-float)]"
+          class="dialog"
           :style="{ maxWidth: `${width}px` }"
           role="dialog"
           aria-modal="true"
         >
-          <header class="flex items-start gap-3 border-b border-line px-5 py-3.5">
+          <header class="dialog-head">
             <div class="min-w-0 flex-1">
-              <h2 class="text-[15px] font-semibold text-ink">{{ title }}</h2>
-              <p v-if="subtitle" class="mt-0.5 text-xs text-muted">{{ subtitle }}</p>
+              <div class="dialog-title">{{ title }}</div>
+              <p v-if="subtitle" class="mt-1 text-xs text-muted">{{ subtitle }}</p>
             </div>
-            <button class="icon-btn -mr-2 -mt-1" aria-label="关闭" @click="emit('close')">
-              <AppIcon name="x" :size="16" />
+            <button class="icon-btn" aria-label="关闭" @click="emit('close')">
+              <AppIcon name="x" :size="15" />
             </button>
           </header>
-          <div class="max-h-[70vh] overflow-y-auto px-5 py-4">
+          <div class="dialog-body">
             <slot />
           </div>
-          <footer
-            v-if="$slots.footer"
-            class="flex items-center justify-end gap-2 border-t border-line px-5 py-3"
-          >
+          <footer v-if="$slots.footer" class="dialog-foot">
             <slot name="footer" />
           </footer>
         </div>

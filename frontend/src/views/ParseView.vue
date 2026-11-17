@@ -3,10 +3,12 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
-import ConfidenceBadge from '@/components/ConfidenceBadge.vue'
+import ConfidenceGauge from '@/components/ConfidenceGauge.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorBanner from '@/components/ErrorBanner.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import Pager from '@/components/Pager.vue'
+import type { SlateRow } from '@/components/ui-types'
 import { usePagination } from '@/composables/usePagination'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -63,6 +65,23 @@ const counts = computed(() => ({
   todo: files.value.filter(needsReview).length,
   unparsed: files.value.filter((file) => !file.parsed).length,
 }))
+
+const avgConfidence = computed(() => {
+  const parsed = files.value.filter((file) => file.parsed)
+  if (parsed.length === 0) return null
+  return Math.round(parsed.reduce((sum, file) => sum + file.confidence, 0) / parsed.length)
+})
+
+const slate = computed<SlateRow[]>(() => [
+  { label: 'FILES', value: String(files.value.length) },
+  { label: 'PENDING', value: String(counts.value.todo), tone: counts.value.todo ? 'amber' : undefined },
+  {
+    label: 'AVG CONF.',
+    value: avgConfidence.value === null ? '—' : `${avgConfidence.value}%`,
+    tone: avgConfidence.value !== null && avgConfidence.value >= 85 ? 'green' : 'amber',
+  },
+  { label: 'MODE', value: 'MANUAL REVIEW' },
+])
 
 const filtered = computed(() => {
   if (filter.value === 'todo') return files.value.filter(needsReview)
@@ -248,11 +267,11 @@ function episodeLabel(file: MediaFile): string {
 }
 
 function dotClass(file: MediaFile) {
-  if (!file.parsed) return 'bg-[var(--border-strong)]'
-  if (file.status === 'matched' || file.status === 'renamed') return 'bg-accent'
-  if (file.confidence >= 85) return 'bg-success'
-  if (file.confidence >= 60) return 'bg-warning'
-  return 'bg-danger'
+  if (!file.parsed) return ''
+  if (file.status === 'matched' || file.status === 'renamed') return 'ok'
+  if (file.confidence >= 85) return 'ok'
+  if (file.confidence >= 60) return 'warn'
+  return 'bad'
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -278,26 +297,29 @@ const tabs: { key: FilterKey; label: string }[] = [
 
 <template>
   <div>
-    <header class="mb-5 flex flex-wrap items-start gap-3">
-      <div class="min-w-0 flex-1">
-        <h1 class="text-2xl font-semibold leading-8 tracking-tight text-ink">解析</h1>
-        <p class="mt-1 text-[13px] text-muted">检查并修正文件名解析结果，确认后再进入刮削</p>
-      </div>
-      <div class="flex items-center gap-2">
+    <PageHeader
+      ghost="02"
+      kicker="STEP 02 · PARSE"
+      title="解析"
+      title-en="PARSE"
+      description="检查并修正文件名解析结果，确认剧名、季集与发布信息后再进入刮削。"
+      :slate="slate"
+    >
+      <template #actions>
         <button class="btn" :disabled="batchParsing || files.length === 0" @click="batchParse">
           <AppIcon name="sparkles" :size="14" :spin="batchParsing" />
           批量自动解析
         </button>
         <button
-          class="btn btn-primary"
+          class="btn btn-amber"
           :disabled="batchParsing || files.length === 0"
           @click="acceptAll"
         >
           全部接受
           <AppIcon name="arrow-right" :size="14" />
         </button>
-      </div>
-    </header>
+      </template>
+    </PageHeader>
 
     <ErrorBanner v-if="error" class="mb-4" title="解析失败" :message="error" />
 
@@ -307,60 +329,55 @@ const tabs: { key: FilterKey; label: string }[] = [
         title="还没有可解析的文件"
         description="请先扫描目录，扫描完成后会自动解析视频文件名。"
       >
-        <button class="btn btn-primary" @click="router.push('/')">
+        <button class="btn btn-amber" @click="router.push('/')">
           <AppIcon name="scan" :size="14" />
           去扫描
         </button>
       </EmptyState>
     </div>
 
-    <div v-else class="grid items-start gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-      <section class="panel overflow-hidden">
-        <div class="flex items-center gap-1 border-b border-line px-2 py-2">
+    <div v-else class="split-parse">
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">FILE ROLL <b>文件卷</b></span>
+          <span class="mono dim" style="font-size: 9.5px">{{ filtered.length }}</span>
+        </div>
+
+        <div class="tabs-line">
           <button
             v-for="tab in tabs"
             :key="tab.key"
-            class="flex h-7 items-center gap-1.5 rounded px-2 text-xs transition"
-            :class="
-              filter === tab.key
-                ? 'bg-[var(--accent-soft)] font-medium text-accent'
-                : 'text-muted hover:text-ink'
-            "
+            class="tab"
+            :class="{ on: filter === tab.key }"
             @click="filter = tab.key"
           >
-            {{ tab.label }}
-            <span class="font-mono text-[10.5px] opacity-70">{{ counts[tab.key] }}</span>
+            {{ tab.label }} {{ counts[tab.key] }}
           </button>
         </div>
 
-        <div class="max-h-[calc(100vh-260px)] overflow-y-auto">
+        <div class="roll">
           <button
             v-for="file in pageItems"
             :key="file.id"
-            class="flex h-12 w-full items-center gap-2.5 border-b border-line/50 px-3 text-left transition last:border-0"
-            :class="
-              file.id === activeId
-                ? 'bg-[var(--accent-soft)]'
-                : 'hover:bg-[var(--bg-elevated)]'
-            "
+            class="roll-item"
+            :class="{ on: file.id === activeId }"
             @click="activeId = file.id"
           >
-            <span class="h-1.5 w-1.5 flex-none rounded-full" :class="dotClass(file)" />
-            <span class="min-w-0 flex-1">
-              <span class="block truncate font-mono text-xs text-ink">
-                {{ episodeLabel(file) }}
-              </span>
-              <span class="block truncate text-[11px] text-faint">{{ file.parsed?.title ?? '未解析' }}</span>
+            <span class="dot" :class="dotClass(file)" />
+            <span class="roll-main">
+              <b>{{ episodeLabel(file) }}</b>
+              <small>{{ file.parsed?.title ?? '未解析' }}</small>
             </span>
-            <span v-if="file.parsed" class="flex-none font-mono text-[11px] text-muted">
-              {{ file.confidence }}%
-            </span>
-            <AppIcon v-if="!file.parsed" name="alert" :size="12" class="flex-none text-warning" />
+            <span class="conf">{{ file.parsed ? `${file.confidence}%` : '未解析' }}</span>
           </button>
 
           <p v-if="filtered.length === 0" class="py-10 text-center text-xs text-faint">
             该筛选下暂无文件
           </p>
+        </div>
+
+        <div class="roll-foot">
+          <span class="kbd">J</span><span class="kbd">K</span> 切换
         </div>
 
         <Pager
@@ -372,110 +389,116 @@ const tabs: { key: FilterKey; label: string }[] = [
         />
       </section>
 
-      <section v-if="active" class="panel overflow-hidden">
-        <div class="border-b border-line px-4 py-3">
-          <div class="flex items-start gap-2">
-            <p class="min-w-0 flex-1 break-all font-mono text-[13px] leading-5 text-ink">
-              {{ active.original_name }}
-            </p>
-            <button class="icon-btn -mr-1.5 -mt-1 flex-none" title="复制文件名" @click="copyName">
-              <AppIcon name="copy" :size="14" />
+      <section v-if="active" class="panel">
+        <div class="shot-head">
+          <div class="shot-id">
+            <span class="badge">{{ episodeLabel(active) }}</span>
+            <small>SHOT DETAIL / 解析详情</small>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="btn btn-sm btn-ghost" :disabled="reparsing || saving" @click="reparse">
+              <AppIcon name="refresh" :size="13" :spin="reparsing" />
+              重新自动解析
             </button>
-          </div>
-          <div class="mt-2 flex flex-wrap items-center gap-2 text-[11.5px] text-faint">
-            <span v-if="active.parsed">置信度</span>
-            <ConfidenceBadge v-if="active.parsed" :value="active.confidence" />
-            <span v-else class="tag tag-warning">未解析</span>
-            <span class="ml-auto font-mono">{{ activeIndex + 1 }} / {{ filtered.length }}</span>
+            <button class="btn btn-sm btn-ghost" :disabled="saving" @click="move(1)">跳过</button>
           </div>
         </div>
 
-        <div class="grid gap-3 p-4 sm:grid-cols-2">
-          <div class="sm:col-span-2">
-            <label class="label">剧名</label>
-            <input
-              v-model="draft.title"
-              class="input"
-              :class="titleInvalid ? 'border-warning' : ''"
-              placeholder="例如 Breaking Bad"
-            />
-            <p v-if="titleInvalid" class="mt-1 text-[11.5px] text-warning">
-              请手动填写剧名，否则无法匹配
-            </p>
-          </div>
-
-          <div>
-            <label class="label">年份</label>
-            <input
-              v-model="draft.year"
-              class="input font-mono"
-              :class="yearInvalid ? 'border-warning' : ''"
-              placeholder="2008"
-              inputmode="numeric"
-            />
-          </div>
-
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="label">季</label>
-              <input
-                v-model="draft.season"
-                class="input font-mono"
-                :class="seasonInvalid ? 'border-danger' : ''"
-                placeholder="1"
-                inputmode="numeric"
-              />
-            </div>
-            <div>
-              <label class="label">集</label>
-              <input
-                v-model="draft.episode"
-                class="input font-mono"
-                :class="episodeInvalid ? 'border-danger' : ''"
-                placeholder="3"
-                inputmode="numeric"
-              />
-            </div>
-          </div>
-
-          <div class="sm:col-span-2">
-            <label class="label">集标题</label>
-            <input v-model="draft.episode_title" class="input" placeholder="可留空" />
-          </div>
-
-          <div>
-            <label class="label">分辨率</label>
-            <input v-model="draft.resolution" class="input font-mono" placeholder="1080p" />
-          </div>
-
-          <div>
-            <label class="label">编码</label>
-            <input v-model="draft.codec" class="input font-mono" placeholder="x264" />
-          </div>
-
-          <div>
-            <label class="label">发布组</label>
-            <input v-model="draft.release_group" class="input font-mono" placeholder="DEMAND" />
-          </div>
-
-          <div>
-            <label class="label">结束集（可选）</label>
-            <input
-              v-model="draft.episode_end"
-              class="input font-mono"
-              placeholder="用于多集合并文件"
-              inputmode="numeric"
-            />
-          </div>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
-          <button class="btn" :disabled="reparsing || saving" @click="reparse">
-            <AppIcon name="refresh" :size="14" :spin="reparsing" />
-            重新自动解析
+        <div class="raw-block">
+          <span class="lbl">RAW FILE</span>
+          <code>{{ active.original_name }}</code>
+          <button class="copy" title="复制文件名" @click="copyName">
+            <AppIcon name="copy" :size="14" />
           </button>
-          <button class="btn btn-ghost" :disabled="saving" @click="move(1)">跳过</button>
-          <button class="btn btn-primary ml-auto" :disabled="saving" @click="save">
+        </div>
+
+        <div class="detail-grid">
+          <div class="form-grid">
+            <div class="field span-2" :class="{ low: titleInvalid }">
+              <label>剧名 <span>TITLE</span></label>
+              <input v-model="draft.title" class="input mono" placeholder="例如 Breaking Bad" />
+              <div v-if="titleInvalid" class="hint-low">请手动填写剧名，否则无法匹配</div>
+            </div>
+
+            <div class="field" :class="{ low: yearInvalid }">
+              <label>年份 <span>YEAR</span></label>
+              <input
+                v-model="draft.year"
+                class="input mono"
+                placeholder="2008"
+                inputmode="numeric"
+              />
+            </div>
+
+            <div class="field" :class="{ low: seasonInvalid || episodeInvalid }">
+              <label>季 / 集 <span>SEASON / EPISODE</span></label>
+              <div class="flex items-center gap-2">
+                <input
+                  v-model="draft.season"
+                  class="input mono"
+                  placeholder="1"
+                  inputmode="numeric"
+                />
+                <span class="mono dim text-[10px]">/</span>
+                <input
+                  v-model="draft.episode"
+                  class="input mono"
+                  placeholder="3"
+                  inputmode="numeric"
+                />
+              </div>
+            </div>
+
+            <div class="field span-2" :class="{ low: active.confidence < 60 }">
+              <label>集标题 <span>EPISODE TITLE</span></label>
+              <input v-model="draft.episode_title" class="input mono" placeholder="可留空" />
+              <div v-if="active.confidence < 60" class="hint-low">
+                置信度偏低，请核对原文拼写
+              </div>
+            </div>
+
+            <div class="field">
+              <label>分辨率 <span>RESOLUTION</span></label>
+              <input v-model="draft.resolution" class="input mono" placeholder="1080p" />
+            </div>
+
+            <div class="field">
+              <label>编码 <span>CODEC</span></label>
+              <input v-model="draft.codec" class="input mono" placeholder="x264" />
+            </div>
+
+            <div class="field span-2">
+              <label>发布组 <span>RELEASE GROUP</span></label>
+              <input v-model="draft.release_group" class="input mono" placeholder="DEMAND" />
+            </div>
+
+            <div class="field">
+              <label>结束集 <span>EPISODE END</span></label>
+              <input
+                v-model="draft.episode_end"
+                class="input mono"
+                placeholder="可选"
+                inputmode="numeric"
+              />
+            </div>
+          </div>
+
+          <ConfidenceGauge v-if="active.parsed" :value="active.confidence" />
+          <aside v-else class="conf-card">
+            <div class="conf-label">未解析</div>
+            <div class="conf-sub">NO CONFIDENCE</div>
+            <p class="text-[11px] text-faint">请先执行自动解析，或手动填写字段。</p>
+          </aside>
+        </div>
+
+        <div class="action-bar">
+          <button class="btn btn-ghost" :disabled="reparsing || saving" @click="reparse">
+            重新解析
+          </button>
+          <span class="mono dim" style="font-size: 9px">
+            {{ activeIndex + 1 }} / {{ filtered.length }}
+          </span>
+          <button class="btn btn-amber push" :disabled="saving" @click="save">
             <AppIcon v-if="saving" name="loader" :size="14" spin />
             保存并下一项
             <AppIcon name="arrow-right" :size="14" />

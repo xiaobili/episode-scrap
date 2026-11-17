@@ -53,37 +53,26 @@ function go(page: number | null) {
 </script>
 
 <template>
-  <div
-    class="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-3 py-2 text-[11.5px] text-muted"
-  >
+  <div class="table-foot">
     <span>
-      共 <b class="font-mono text-ink">{{ total }}</b> 条
+      共 <b class="text-ink">{{ total }}</b> 条 · 第 {{ page }} / {{ pageCount }} 页
     </span>
+
     <label class="flex items-center gap-1.5">
       每页
-      <SelectMenu
-        v-model="pageSizeValue"
-        class="h-7 !w-auto text-xs"
-        :options="sizeOptions"
-      />
+      <SelectMenu v-model="pageSizeValue" class="h-7 !w-auto text-xs" :options="sizeOptions" />
     </label>
 
-    <div class="ml-auto flex items-center gap-1">
-      <button class="btn btn-xs" :disabled="page <= 1" @click="go(page - 1)">
+    <div class="pager ml-auto">
+      <button :disabled="page <= 1" aria-label="上一页" @click="go(page - 1)">
         <AppIcon name="chevron-left" :size="12" />
-        上一页
       </button>
 
       <template v-for="(item, index) in pages" :key="index">
         <span v-if="item === null" class="px-1 text-faint">…</span>
         <button
           v-else
-          class="grid h-7 min-w-7 place-items-center rounded border px-1.5 font-mono text-[11px] transition"
-          :class="
-            item === page
-              ? 'border-accent bg-[var(--accent-soft)] text-accent'
-              : 'border-transparent text-muted hover:border-line-strong hover:text-ink'
-          "
+          :class="{ on: item === page }"
           :aria-current="item === page ? 'page' : undefined"
           @click="go(item)"
         >
@@ -91,8 +80,7 @@ function go(page: number | null) {
         </button>
       </template>
 
-      <button class="btn btn-xs" :disabled="page >= pageCount" @click="go(page + 1)">
-        下一页
+      <button :disabled="page >= pageCount" aria-label="下一页" @click="go(page + 1)">
         <AppIcon name="chevron-right" :size="12" />
       </button>
     </div>

@@ -3,12 +3,13 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { api, wsUrl } from '@/api/client'
 import AppIcon from '@/components/AppIcon.vue'
-import BaseDrawer from '@/components/BaseDrawer.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorBanner from '@/components/ErrorBanner.vue'
+import PageHeader from '@/components/PageHeader.vue'
+import SegmentedControl from '@/components/SegmentedControl.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import TaskProgress from '@/components/TaskProgress.vue'
-import SelectMenu from '@/components/SelectMenu.vue'
+import type { SlateRow } from '@/components/ui-types'
 import { useToast } from '@/composables/useToast'
 import type { Task, TaskDetail } from '@/types'
 
@@ -19,8 +20,9 @@ const filter = ref('')
 const loading = ref(false)
 const error = ref('')
 const detail = ref<TaskDetail | null>(null)
-const drawerOpen = ref(false)
 const retrying = ref(false)
+const socketConnected = ref(false)
+const lastSync = ref('')
 
 let socket: WebSocket | null = null
 let timer: number | undefined
@@ -36,6 +38,38 @@ const hasActive = computed(() =>
   tasks.value.some((task) => task.status === 'running' || task.status === 'pending'),
 )
 
+const runningCount = computed(() => tasks.value.filter((task) => task.status === 'running').length)
+const queuedCount = computed(() => tasks.value.filter((task) => task.status === 'pending').length)
+const doneToday = computed(
+  () =>
+    tasks.value.filter((task) => task.status === 'completed' && isToday(task.created_at)).length,
+)
+
+const slate = computed<SlateRow[]>(() => [
+  { label: 'RUNNING', value: String(runningCount.value), tone: runningCount.value ? 'amber' : undefined },
+  { label: 'QUEUED', value: String(queuedCount.value) },
+  { label: 'DONE TODAY', value: String(doneToday.value) },
+  {
+    label: 'SOCKET',
+    value: socketConnected.value ? 'CONNECTED' : 'IDLE',
+    tone: socketConnected.value ? 'green' : undefined,
+  },
+])
+
+const detailPercent = computed(() => {
+  if (!detail.value) return 0
+  if (!detail.value.total) return detail.value.status === 'completed' ? 100 : 0
+  return Math.min(
+    100,
+    Math.round(((detail.value.done + detail.value.failed) / detail.value.total) * 100),
+  )
+})
+
+function isToday(value: string) {
+  const date = new Date(value)
+  return !Number.isNaN(date.getTime()) && date.toDateString() === new Date().toDateString()
+}
+
 function messageOf(err: unknown) {
   return err instanceof Error ? err.message : '请求失败'
 }
@@ -49,11 +83,12 @@ async function load() {
     error.value = messageOf(err)
   } finally {
     loading.value = false
+    lastSync.value = new Date().toLocaleTimeString()
   }
 }
 
 async function open(task: Task) {
-  drawerOpen.value = true
+  disconnect()
   detail.value = null
   error.value = ''
   try {
@@ -65,7 +100,7 @@ async function open(task: Task) {
 }
 
 function close() {
-  drawerOpen.value = false
+  detail.value = null
   disconnect()
 }
 
@@ -73,8 +108,11 @@ function connect(taskId: string) {
   disconnect()
   const ws = new WebSocket(wsUrl(taskId))
   socket = ws
+  ws.onopen = () => {
+    socketConnected.value = true
+  }
   ws.onmessage = (event) => {
-    const data = JSON.parse(event.data) as {
+    let data: {
       status: string
       total: number
       done: number
@@ -86,6 +124,11 @@ function connect(taskId: string) {
         status: string
         error: string | null
       }
+    }
+    try {
+      data = JSON.parse(event.data) as typeof data
+    } catch {
+      return
     }
     if (!detail.value || detail.value.id !== taskId) return
 
@@ -107,11 +150,15 @@ function connect(taskId: string) {
     }
   }
   ws.onerror = () => disconnect()
+  ws.onclose = () => {
+    socketConnected.value = false
+  }
 }
 
 function disconnect() {
   socket?.close()
   socket = null
+  socketConnected.value = false
 }
 
 async function retry() {
@@ -130,6 +177,16 @@ async function retry() {
   }
 }
 
+async function copyId() {
+  if (!detail.value) return
+  try {
+    await navigator.clipboard.writeText(detail.value.id)
+    toast.info('任务 ID 已复制')
+  } catch {
+    toast.error('复制失败')
+  }
+}
+
 function formatTime(value: string | null) {
   if (!value) return '—'
   const date = new Date(value)
@@ -141,7 +198,25 @@ function formatTime(value: string | null) {
 function typeLabel(type: string) {
   if (type === 'rename') return '重命名'
   if (type === 'scrape') return '刮削'
+  if (type === 'refresh') return '媒体库刷新'
   return type
+}
+
+function typeIcon(type: string) {
+  if (type === 'rename') return 'rename'
+  if (type === 'scrape') return 'sparkles'
+  if (type === 'refresh') return 'refresh'
+  return 'tasks'
+}
+
+function itemDot(status: string) {
+  if (status === 'success' || status === 'ready' || status === 'renamed') return 'ok'
+  if (status === 'failed' || status === 'error') return 'bad'
+  return 'warn'
+}
+
+function setFilter(value: string | number) {
+  filter.value = String(value)
 }
 
 watch(filter, load)
@@ -161,191 +236,199 @@ onBeforeUnmount(() => {
 
 <template>
   <div>
-    <header class="mb-5 flex flex-wrap items-start gap-3">
-      <div class="min-w-0 flex-1">
-        <h1 class="text-2xl font-semibold leading-8 tracking-tight text-ink">任务中心</h1>
-        <p class="mt-1 text-[13px] text-muted">查看历史任务与逐项执行结果，失败项可重试</p>
-      </div>
-      <div class="flex items-center gap-2">
-        <SelectMenu
-          v-model="filter"
-          class="!w-auto text-xs"
-          :options="filters.map((f) => ({ value: f.value, label: f.label }))"
-        />
-        <button class="btn" :disabled="loading" @click="load">
-          <AppIcon name="refresh" :size="14" :spin="loading" />
-          刷新
-        </button>
-      </div>
-    </header>
+    <PageHeader
+      ghost="05"
+      kicker="OPERATIONS · TASKS"
+      title="任务中心"
+      title-en="TASKS"
+      description="后台任务实时进度、逐项结果与失败重试。任务在离开页面后继续运行。"
+      :slate="slate"
+    />
 
     <ErrorBanner v-if="error" class="mb-4" :message="error" retryable @retry="load" />
 
-    <section class="panel overflow-hidden">
-      <div v-if="loading && tasks.length === 0" class="divide-y divide-line/60">
-        <div v-for="index in 5" :key="index" class="flex h-12 items-center gap-6 px-4">
-          <span class="h-3 w-16 animate-pulse rounded bg-[var(--bg-elevated)]" />
-          <span class="h-3 flex-1 animate-pulse rounded bg-[var(--bg-elevated)]" />
-          <span class="h-3 w-28 animate-pulse rounded bg-[var(--bg-elevated)]" />
-        </div>
-      </div>
-
-      <div v-else-if="tasks.length === 0" class="px-4">
-        <EmptyState
-          icon="tasks"
-          title="暂无任务"
-          description="执行重命名后会在这里生成任务记录，运行中的任务将实时更新进度。"
-        />
-      </div>
-
-      <div v-else class="overflow-x-auto">
-        <table class="w-full min-w-[820px] border-collapse text-[13px]">
-          <thead>
-            <tr class="border-b border-line text-left text-xs text-faint">
-              <th class="h-10 px-4 font-medium">类型</th>
-              <th class="h-10 w-24 px-3 font-medium">数据源</th>
-              <th class="h-10 w-52 px-3 font-medium">进度</th>
-              <th class="h-10 w-24 px-3 font-medium">成功 / 失败</th>
-              <th class="h-10 w-24 px-3 font-medium">状态</th>
-              <th class="h-10 w-32 px-3 font-medium">开始时间</th>
-              <th class="h-10 w-20 px-4 font-medium" />
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="task in tasks"
-              :key="task.id"
-              class="h-12 cursor-pointer border-b border-line/60 transition-colors last:border-0 hover:bg-[var(--bg-elevated)]"
-              @click="open(task)"
-            >
-              <td class="px-4">
-                <span class="font-medium text-ink">{{ typeLabel(task.type) }}</span>
-                <span class="ml-2 font-mono text-[11px] text-faint">{{ task.id.slice(0, 8) }}</span>
-              </td>
-              <td class="px-3">
-                <span class="tag" :class="task.source_type === 'openlist' ? 'tag-info' : ''">
-                  {{ task.source_type === 'openlist' ? 'OpenList' : '本地' }}
-                </span>
-              </td>
-              <td class="px-3">
-                <TaskProgress
-                  :total="task.total"
-                  :done="task.done"
-                  :failed="task.failed"
-                  :status="task.status"
-                />
-              </td>
-              <td class="px-3 font-mono text-xs">
-                <span class="text-success">{{ task.done }}</span>
-                <span class="mx-1 text-faint">/</span>
-                <span :class="task.failed ? 'text-danger' : 'text-faint'">{{ task.failed }}</span>
-              </td>
-              <td class="px-3"><StatusTag :status="task.status" /></td>
-              <td class="px-3 font-mono text-xs text-faint">{{ formatTime(task.created_at) }}</td>
-              <td class="px-4 text-right">
-                <span class="text-[11.5px] text-accent">详情</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <BaseDrawer :open="drawerOpen" title="任务详情" :width="520" @close="close">
-      <div v-if="!detail" class="space-y-2">
-        <div v-for="index in 4" :key="index" class="h-10 animate-pulse rounded bg-[var(--bg-elevated)]" />
-      </div>
-
-      <template v-else>
-        <div class="flex items-center gap-2">
-          <StatusTag :status="detail.status" />
-          <span class="font-mono text-xs text-muted">{{ detail.id }}</span>
+    <div class="tasks-grid">
+      <section class="panel">
+        <div class="table-toolbar">
+          <div class="toolbar-title">
+            <span>TASK LOG</span>
+            <b>{{ tasks.length }} RECORDS</b>
+          </div>
+          <div class="toolbar-right">
+            <SegmentedControl
+              :model-value="filter"
+              :options="filters"
+              size="sm"
+              aria-label="任务状态筛选"
+              @update:model-value="setFilter"
+            />
+            <button class="icon-btn" :disabled="loading" title="刷新" @click="load">
+              <AppIcon name="refresh" :size="14" :spin="loading" />
+            </button>
+          </div>
         </div>
 
-        <div class="mt-3">
-          <TaskProgress
-            :total="detail.total"
-            :done="detail.done"
-            :failed="detail.failed"
-            :status="detail.status"
+        <div v-if="loading && tasks.length === 0" class="divide-y divide-line/60">
+          <div v-for="index in 5" :key="index" class="flex h-12 items-center gap-6 px-4">
+            <span class="h-3 w-16 animate-pulse rounded bg-[var(--surface-2)]" />
+            <span class="h-3 flex-1 animate-pulse rounded bg-[var(--surface-2)]" />
+            <span class="h-3 w-28 animate-pulse rounded bg-[var(--surface-2)]" />
+          </div>
+        </div>
+
+        <div v-else-if="tasks.length === 0" class="px-4">
+          <EmptyState
+            icon="tasks"
+            title="暂无任务"
+            description="执行重命名后会在这里生成任务记录，运行中的任务将实时更新进度。"
           />
         </div>
 
-        <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-          <div>
-            <dt class="text-faint">类型</dt>
-            <dd class="mt-0.5 text-ink">{{ typeLabel(detail.type) }}</dd>
-          </div>
-          <div>
-            <dt class="text-faint">数据源</dt>
-            <dd class="mt-0.5 text-ink">
-              {{ detail.source_type === 'openlist' ? 'OpenList' : '本地' }}
-            </dd>
-          </div>
-          <div>
-            <dt class="text-faint">开始时间</dt>
-            <dd class="mt-0.5 font-mono text-ink">{{ formatTime(detail.created_at) }}</dd>
-          </div>
-          <div>
-            <dt class="text-faint">结束时间</dt>
-            <dd class="mt-0.5 font-mono text-ink">{{ formatTime(detail.finished_at) }}</dd>
-          </div>
-          <div class="col-span-2">
-            <dt class="text-faint">命名模板</dt>
-            <dd class="mt-0.5 break-all font-mono text-[11.5px] text-muted">
-              {{ detail.template ?? '—' }}
-            </dd>
-          </div>
-        </dl>
-
-        <div class="my-3 divider" />
-
-        <div class="mb-2 flex items-center justify-between">
-          <span class="text-xs font-medium text-muted">逐项结果</span>
-          <span class="font-mono text-[11px] text-faint">{{ detail.items.length }} 项</span>
+        <div v-else class="overflow-x-auto">
+          <table class="min-w-[720px]">
+            <thead>
+              <tr>
+                <th>任务 / 类型</th>
+                <th class="w-24">数据源</th>
+                <th class="w-52">进度</th>
+                <th class="w-24">状态</th>
+                <th class="th-date w-32">开始</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="task in tasks"
+                :key="task.id"
+                class="task-row"
+                :class="{ on: detail?.id === task.id }"
+                tabindex="0"
+                @click="open(task)"
+                @keydown.enter="open(task)"
+              >
+                <td>
+                  <div class="task-type">
+                    <span class="ic"><AppIcon :name="typeIcon(task.type)" :size="14" /></span>
+                    <span>
+                      <b>{{ typeLabel(task.type) }}</b>
+                      <small>{{ task.id.slice(0, 8) }}</small>
+                    </span>
+                  </div>
+                </td>
+                <td>
+                  <span class="tag" :class="task.source_type === 'openlist' ? 'tag-info' : 'tag-amber'">
+                    {{ task.source_type === 'openlist' ? 'OPENLIST' : 'LOCAL' }}
+                  </span>
+                </td>
+                <td class="progress-cell">
+                  <TaskProgress
+                    :total="task.total"
+                    :done="task.done"
+                    :failed="task.failed"
+                    :status="task.status"
+                  />
+                </td>
+                <td><StatusTag :status="task.status" /></td>
+                <td class="cell-date th-date">{{ formatTime(task.created_at) }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
-        <div v-if="detail.items.length === 0" class="py-8 text-center text-xs text-faint">
-          暂无明细
+        <div class="table-foot">
+          <span>REALTIME VIA WS · /ws/tasks/{id}</span>
+          <span>LAST SYNC {{ lastSync || '—' }}</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">DETAIL <b>任务详情</b></span>
+          <button v-if="detail" class="icon-btn" title="关闭详情" @click="close">
+            <AppIcon name="x" :size="13" />
+          </button>
         </div>
 
-        <div v-else class="divide-y divide-line/60 rounded-md border border-line">
-          <div
-            v-for="item in detail.items"
-            :key="item.id"
-            class="flex items-start gap-2 px-2.5 py-2"
-          >
-            <StatusTag :status="item.status" class="mt-0.5 flex-none" />
-            <div class="min-w-0 flex-1">
-              <p class="truncate font-mono text-[11.5px] text-muted" :title="item.name">
-                {{ item.name }}
-              </p>
-              <p v-if="item.new_name" class="truncate font-mono text-[11.5px] text-ink" :title="item.new_name">
-                → {{ item.new_name }}
-              </p>
-              <p v-if="item.error" class="mt-0.5 break-words text-[11px] text-danger">
-                {{ item.error }}
-              </p>
+        <div v-if="!detail">
+          <EmptyState
+            icon="tasks"
+            title="选择左侧任务"
+            description="选中任务后查看实时进度、逐项结果与失败重试。"
+          />
+        </div>
+
+        <template v-else>
+          <div class="detail-head">
+            <div class="id">TASK / {{ detail.id }}</div>
+            <h3>{{ typeLabel(detail.type) }}</h3>
+            <div class="sub">
+              {{ detail.source_type === 'openlist' ? 'OPENLIST' : 'LOCAL' }} · 启动于
+              {{ formatTime(detail.created_at) }}
             </div>
           </div>
-        </div>
 
-        <div v-if="detail.error" class="mt-3">
-          <ErrorBanner title="任务错误" :message="detail.error" />
-        </div>
-      </template>
+          <div class="detail-progress">
+            <div class="big">
+              <b>{{ detailPercent }}%</b>
+              <span>{{ detail.done }} DONE / {{ detail.failed }} FAILED / {{ detail.total }} TOTAL</span>
+            </div>
+            <div class="bar" :class="{ green: detail.status === 'completed' && !detail.failed }">
+              <i :style="{ width: `${detailPercent}%` }" />
+            </div>
+          </div>
 
-      <template v-if="detail" #footer>
-        <button class="btn btn-ghost" @click="close">关闭</button>
-        <button
-          class="btn btn-primary"
-          :disabled="retrying || detail.failed === 0"
-          @click="retry"
-        >
-          <AppIcon name="refresh" :size="14" :spin="retrying" />
-          重试失败项
-        </button>
-      </template>
-    </BaseDrawer>
+          <div class="detail-meta">
+            <div>
+              <div class="k">TEMPLATE</div>
+              <div class="v mono" :title="detail.template ?? ''">{{ detail.template ?? '—' }}</div>
+            </div>
+            <div>
+              <div class="k">STATUS</div>
+              <div class="v"><StatusTag :status="detail.status" /></div>
+            </div>
+            <div>
+              <div class="k">FINISHED</div>
+              <div class="v mono">{{ formatTime(detail.finished_at) }}</div>
+            </div>
+            <div>
+              <div class="k">NFO</div>
+              <div class="v">{{ detail.write_nfo ? '开启 · episodedetails' : '关闭' }}</div>
+            </div>
+          </div>
+
+          <div class="task-items">
+            <div v-if="detail.items.length === 0" class="py-8 text-center text-xs text-faint">
+              暂无明细
+            </div>
+            <template v-else>
+              <div v-for="item in detail.items" :key="item.id" class="task-item">
+                <span class="dot" :class="itemDot(item.status)" />
+                <span class="nm">
+                  {{ item.name }}
+                  <small v-if="item.new_name">→ {{ item.new_name }}</small>
+                  <small v-if="item.error" class="text-danger">{{ item.error }}</small>
+                </span>
+                <StatusTag :status="item.status" />
+              </div>
+            </template>
+          </div>
+
+          <div v-if="detail.error" class="px-4 py-3">
+            <ErrorBanner title="任务错误" :message="detail.error" />
+          </div>
+
+          <div class="detail-foot">
+            <button class="btn btn-sm btn-ghost" @click="copyId">复制 ID</button>
+            <button
+              class="btn btn-sm ml-auto"
+              :disabled="retrying || detail.failed === 0"
+              @click="retry"
+            >
+              <AppIcon name="refresh" :size="13" :spin="retrying" />
+              重试失败项
+            </button>
+          </div>
+        </template>
+      </section>
+    </div>
   </div>
 </template>

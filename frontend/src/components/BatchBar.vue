@@ -4,36 +4,40 @@ import AppIcon from '@/components/AppIcon.vue'
 withDefaults(
   defineProps<{
     count: number
+    total?: number
+    chips?: string[]
     nextLabel?: string
     nextDisabled?: boolean
     showNext?: boolean
   }>(),
-  { nextLabel: '下一步', nextDisabled: false, showNext: true },
+  { nextLabel: '下一步', nextDisabled: false, showNext: true, chips: () => [] },
 )
 const emit = defineEmits<{ clear: []; next: [] }>()
 </script>
 
 <template>
   <Transition name="fade">
-    <div
-      v-if="count > 0"
-      class="fixed bottom-0 left-0 right-0 z-30 flex h-14 items-center gap-3 border-t border-line bg-[color-mix(in_srgb,var(--bg-surface)_92%,transparent)] px-4 backdrop-blur-xl md:left-[var(--sidebar-width,224px)] md:px-7"
-    >
-      <span class="text-[13px] text-muted">
-        已选 <span class="font-mono font-semibold text-ink">{{ count }}</span> 项
-      </span>
-      <button class="btn btn-ghost btn-sm" @click="emit('clear')">清空选择</button>
+    <div v-if="count > 0" class="batchbar">
+      <div class="batch-count">
+        <b>{{ count }}</b>
+        <span>SELECTED / {{ total ?? count }}</span>
+      </div>
 
-      <div class="flex flex-1 items-center justify-end gap-2">
+      <div v-if="chips.length" class="batch-chips">
+        <span v-for="chip in chips.slice(0, 4)" :key="chip">{{ chip }}</span>
+      </div>
+
+      <div class="batch-actions">
+        <button class="btn btn-xs btn-ghost" @click="emit('clear')">清空</button>
         <slot />
         <button
           v-if="showNext"
-          class="btn btn-primary"
+          class="btn btn-xs btn-primary"
           :disabled="nextDisabled || count === 0"
           @click="emit('next')"
         >
           {{ nextLabel }}
-          <AppIcon name="arrow-right" :size="14" />
+          <AppIcon name="arrow-right" :size="12" />
         </button>
       </div>
     </div>

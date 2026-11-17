@@ -9,11 +9,8 @@ const emit = defineEmits<{ retry: [] }>()
 </script>
 
 <template>
-  <div
-    class="flex items-start gap-2.5 rounded-lg border border-[rgba(240,97,109,.35)] bg-[rgba(240,97,109,.08)] px-3.5 py-2.5"
-    role="alert"
-  >
-    <AppIcon name="alert" :size="15" class="mt-0.5 flex-none text-danger" />
+  <div class="warn-note" role="alert" style="border-color: rgba(226, 101, 79, 0.35); background: rgba(226, 101, 79, 0.08)">
+    <AppIcon name="alert" :size="15" class="mt-0.5 flex-none" style="color: var(--red)" />
     <div class="min-w-0 flex-1">
       <p class="text-[13px] font-medium text-ink">{{ title }}</p>
       <p class="mt-0.5 break-words text-xs leading-5 text-muted">{{ message }}</p>

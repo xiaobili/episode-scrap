@@ -75,30 +75,31 @@ function insert(name: string, pad?: boolean) {
 </script>
 
 <template>
-  <div>
-    <div class="flex items-center gap-2">
+  <div class="tpl-panel">
+    <div class="tpl-row">
+      <span class="lbl">TEMPLATE</span>
       <input
         ref="input"
-        class="input font-mono text-xs"
+        class="tpl-input"
         :value="modelValue"
         :disabled="disabled"
         spellcheck="false"
         placeholder="{title} - S{season:02d}E{episode:02d} - {episode_title}"
+        aria-label="命名模板"
         @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
       />
-      <span class="flex-none font-mono text-[11px] text-faint">.mkv</span>
     </div>
 
-    <div class="mt-2 flex flex-wrap items-center gap-1">
-      <span class="mr-1 text-[11px] text-faint">插入变量</span>
+    <div class="vars">
+      <span class="lbl">INSERT</span>
       <button
         v-for="item in variables"
         :key="item.name"
-        class="rounded border border-line px-1.5 py-0.5 font-mono text-[11px] text-muted transition hover:border-accent hover:text-accent"
+        class="var-chip"
         :disabled="disabled"
         @click="insert(item.name, item.pad)"
       >
-        + {{ item.label }}
+        {{ item.label }}
       </button>
     </div>
 
@@ -107,11 +108,10 @@ function insert(name: string, pad?: boolean) {
       未知变量：{{ unknown.join('、') }}
     </p>
 
-    <div class="mt-2 rounded-md border border-line bg-base px-2.5 py-1.5">
-      <span class="mr-2 text-[11px] text-faint">实时示例</span>
-      <span class="break-all font-mono text-xs text-ink">
-        {{ preview || '（模板为空）' }}.mkv
-      </span>
+    <div class="sample-line">
+      <span class="lbl">PREVIEW</span>
+      <AppIcon name="play" :size="12" class="text-accent" />
+      <code>{{ preview || '（模板为空）' }}.mkv</code>
     </div>
   </div>
 </template>

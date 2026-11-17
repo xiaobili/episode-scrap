@@ -22,12 +22,12 @@ const map: Record<string, { label: string; tone: string }> = {
 }
 
 const toneClass: Record<string, string> = {
-  accent: 'tag-accent',
-  success: 'tag-success',
-  warning: 'tag-warning',
-  danger: 'tag-danger',
+  accent: 'tag-amber',
+  success: 'tag-ok',
+  warning: 'tag-warn',
+  danger: 'tag-bad',
   info: 'tag-info',
-  muted: '',
+  muted: 'tag-mute',
 }
 
 const current = computed(
