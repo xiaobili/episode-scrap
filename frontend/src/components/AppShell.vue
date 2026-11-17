@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { api } from '@/api/client'
 import AppIcon from '@/components/AppIcon.vue'
+import BrandMark from '@/components/BrandMark.vue'
 import { useTimecode } from '@/composables/useClock'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -111,7 +112,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   <div class="app">
     <header class="topbar">
       <button class="brand" aria-label="EpisodeScrap 首页" @click="navigate('scan')">
-        <span class="reel"><AppIcon name="clap" :size="15" /></span>
+        <span class="reel"><BrandMark /></span>
         <span class="brand-text">
           <span class="brand-name">EPISODE<span>SCRAP</span></span>
           <span class="brand-sub">MEDIA WORKBENCH</span>

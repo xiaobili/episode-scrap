@@ -11,8 +11,9 @@ const props = withDefaults(
     total: number
     pageSize: number
     pageSizes?: number[]
+    compact?: boolean
   }>(),
-  { pageSizes: () => [10, 20, 50, 100] },
+  { pageSizes: () => [10, 20, 50, 100], compact: false },
 )
 
 const emit = defineEmits<{
@@ -54,35 +55,49 @@ function go(page: number | null) {
 
 <template>
   <div class="table-foot">
-    <span>
-      共 <b class="text-ink">{{ total }}</b> 条 · 第 {{ page }} / {{ pageCount }} 页
-    </span>
-
-    <label class="flex items-center gap-1.5">
-      每页
-      <SelectMenu v-model="pageSizeValue" class="h-7 !w-auto text-xs" :options="sizeOptions" />
-    </label>
-
-    <div class="pager ml-auto">
-      <button :disabled="page <= 1" aria-label="上一页" @click="go(page - 1)">
-        <AppIcon name="chevron-left" :size="12" />
-      </button>
-
-      <template v-for="(item, index) in pages" :key="index">
-        <span v-if="item === null" class="px-1 text-faint">…</span>
-        <button
-          v-else
-          :class="{ on: item === page }"
-          :aria-current="item === page ? 'page' : undefined"
-          @click="go(item)"
-        >
-          {{ item }}
+    <template v-if="compact">
+      <span>{{ page }} / {{ pageCount }}</span>
+      <div class="pager ml-auto">
+        <button :disabled="page <= 1" aria-label="上一页" @click="go(page - 1)">
+          <AppIcon name="chevron-left" :size="12" />
         </button>
-      </template>
+        <button :disabled="page >= pageCount" aria-label="下一页" @click="go(page + 1)">
+          <AppIcon name="chevron-right" :size="12" />
+        </button>
+      </div>
+    </template>
 
-      <button :disabled="page >= pageCount" aria-label="下一页" @click="go(page + 1)">
-        <AppIcon name="chevron-right" :size="12" />
-      </button>
-    </div>
+    <template v-else>
+      <span>
+        共 <b class="text-ink">{{ total }}</b> 条 · 第 {{ page }} / {{ pageCount }} 页
+      </span>
+
+      <label class="flex items-center gap-1.5">
+        每页
+        <SelectMenu v-model="pageSizeValue" class="h-7 !w-auto text-xs" :options="sizeOptions" />
+      </label>
+
+      <div class="pager ml-auto">
+        <button :disabled="page <= 1" aria-label="上一页" @click="go(page - 1)">
+          <AppIcon name="chevron-left" :size="12" />
+        </button>
+
+        <template v-for="(item, index) in pages" :key="index">
+          <span v-if="item === null" class="px-1 text-faint">…</span>
+          <button
+            v-else
+            :class="{ on: item === page }"
+            :aria-current="item === page ? 'page' : undefined"
+            @click="go(item)"
+          >
+            {{ item }}
+          </button>
+        </template>
+
+        <button :disabled="page >= pageCount" aria-label="下一页" @click="go(page + 1)">
+          <AppIcon name="chevron-right" :size="12" />
+        </button>
+      </div>
+    </template>
   </div>
 </template>

@@ -17,18 +17,61 @@ import { useWorkflowStore } from '@/stores/workflow'
 import type { OpenListInstance, Settings, StrmRule } from '@/types'
 
 type TabKey = 'providers' | 'openlist' | 'template' | 'strm' | 'jellyfin' | 'general'
+type TabTone = 'ok' | 'warn' | 'idle'
 
 const store = useWorkflowStore()
 const toast = useToast()
 
 const tab = ref<TabKey>('providers')
-const tabs: { key: TabKey; label: string; icon: string }[] = [
-  { key: 'providers', label: '媒体源', icon: 'sparkles' },
-  { key: 'openlist', label: 'OpenList', icon: 'cloud' },
-  { key: 'template', label: '命名模板', icon: 'rename' },
-  { key: 'strm', label: 'STRM', icon: 'file' },
-  { key: 'jellyfin', label: 'Jellyfin', icon: 'server' },
-  { key: 'general', label: '通用', icon: 'settings' },
+const tabs: {
+  key: TabKey
+  label: string
+  en: string
+  icon: string
+  desc: string
+}[] = [
+  {
+    key: 'providers',
+    label: '媒体源',
+    en: 'PROVIDERS',
+    icon: 'sparkles',
+    desc: '刮削与季集信息依赖媒体源 API，Key 仅保存在服务端。',
+  },
+  {
+    key: 'openlist',
+    label: 'OpenList',
+    en: 'INSTANCES',
+    icon: 'cloud',
+    desc: '管理云盘实例，配置后即可在扫描页直接浏览远程目录。',
+  },
+  {
+    key: 'template',
+    label: '命名模板',
+    en: 'TEMPLATE',
+    icon: 'rename',
+    desc: '定义重命名后的文件名结构，修改时可实时预览效果。',
+  },
+  {
+    key: 'strm',
+    label: 'STRM',
+    en: 'STREAM LINKS',
+    icon: 'film',
+    desc: '为媒体生成指向数据源的 .strm 链接文件，供媒体服务器串流。',
+  },
+  {
+    key: 'jellyfin',
+    label: 'Jellyfin',
+    en: 'INTEGRATION',
+    icon: 'server',
+    desc: '接入媒体服务器，在重命名与刮削完成后触发媒体库刷新。',
+  },
+  {
+    key: 'general',
+    label: '通用',
+    en: 'ADVANCED',
+    icon: 'settings',
+    desc: '本地目录白名单与 OpenList 请求参数等高级选项。',
+  },
 ]
 
 const error = ref('')
@@ -73,7 +116,107 @@ const jellyfinKey = ref('')
 const jellyfinTesting = ref(false)
 const hydrated = ref(false)
 
-const selected = computed(() => tabs.find((item) => item.key === tab.value))
+const activeTab = computed(() => tabs.find((item) => item.key === tab.value) ?? tabs[0])
+const activeIndex = computed(() =>
+  String(tabs.findIndex((item) => item.key === tab.value) + 1).padStart(2, '0'),
+)
+const jellyfinConfigured = computed(
+  () => Boolean(store.settings?.jellyfin_url && store.settings?.has_jellyfin_key),
+)
+const providerConnected = computed(() =>
+  store.providers.some((provider) => provider.configured),
+)
+const saveLabel = computed(() => {
+  if (tab.value === 'providers') return '保存 API Key'
+  if (tab.value === 'template') return '保存模板'
+  return '保存更改'
+})
+
+function tabState(key: TabKey): { label: string; tone: TabTone } {
+  const s = store.settings
+  if (key === 'providers') {
+    return s?.has_tmdb_key
+      ? { label: '已配置', tone: 'ok' }
+      : { label: '未配置', tone: 'warn' }
+  }
+  if (key === 'openlist') {
+    return instances.value.length
+      ? { label: `${instances.value.length} 个实例`, tone: 'ok' }
+      : { label: '未配置', tone: 'warn' }
+  }
+  if (key === 'template') {
+    return { label: '模板', tone: 'idle' }
+  }
+  if (key === 'strm') {
+    return { label: strmMode.value.toUpperCase(), tone: 'idle' }
+  }
+  if (key === 'jellyfin') {
+    return s?.jellyfin_url && s?.has_jellyfin_key
+      ? { label: '已配置', tone: 'ok' }
+      : { label: '未配置', tone: 'warn' }
+  }
+  return { label: '高级', tone: 'idle' }
+}
+
+const readyCount = computed(
+  () => tabs.filter((item) => tabState(item.key).tone === 'ok').length,
+)
+const readyPercent = computed(() => Math.round((readyCount.value / tabs.length) * 100))
+
+const dirty = computed(() => {
+  const s = store.settings
+  if (!s) return false
+  if (tab.value === 'providers') return tmdbKey.value.trim().length > 0
+  if (tab.value === 'template') return templateDraft.value !== s.rename_template
+  if (tab.value === 'strm') {
+    if (strmTemplate.value.trim() !== s.strm_url_template) return true
+    if (strmMode.value !== s.strm_output_mode) return true
+    if (strmTargetDir.value.trim() !== s.strm_target_dir) return true
+    return ruleKey(strmRules.value) !== ruleKey(s.strm_rules)
+  }
+  if (tab.value === 'jellyfin') {
+    return (
+      jellyfinUrl.value.trim() !== s.jellyfin_url || jellyfinKey.value.trim().length > 0
+    )
+  }
+  if (tab.value === 'general') {
+    const paths = allowedPaths.value
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+    if (paths.join('\n') !== s.allowed_paths.join('\n')) return true
+    return (
+      (Number(concurrency.value) || 1) !== s.openlist_concurrency ||
+      (Number(timeout.value) || 30) !== s.openlist_timeout ||
+      (Number(retry.value) || 0) !== s.openlist_retry
+    )
+  }
+  return false
+})
+
+const pathCount = computed(
+  () =>
+    allowedPaths.value
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean).length,
+)
+
+function ruleKey(rules: StrmRule[]) {
+  return rules
+    .map((rule) => `${rule.source}|${rule.target_type}|${rule.target_id ?? ''}|${rule.target_dir}`)
+    .join('\n')
+}
+
+function moveTab(delta: number) {
+  const index = tabs.findIndex((item) => item.key === tab.value)
+  const next = (index + delta + tabs.length) % tabs.length
+  tab.value = tabs[next].key
+}
+
+function initial(name: string) {
+  return name.trim().slice(0, 2).toUpperCase() || 'OL'
+}
 
 const version = __APP_VERSION__
 
@@ -358,6 +501,42 @@ async function saveGeneral() {
   )
 }
 
+async function saveCurrent() {
+  if (tab.value === 'providers') await saveTmdbKey()
+  else if (tab.value === 'template') await saveTemplate()
+  else if (tab.value === 'strm') await saveStrm()
+  else if (tab.value === 'jellyfin') await saveJellyfin()
+  else if (tab.value === 'general') await saveGeneral()
+}
+
+function resetCurrent() {
+  const settings = store.settings
+  if (!settings) return
+  error.value = ''
+  if (tab.value === 'providers') {
+    tmdbKey.value = ''
+  } else if (tab.value === 'template') {
+    templateDraft.value = settings.rename_template
+  } else if (tab.value === 'strm') {
+    strmTemplate.value = settings.strm_url_template
+    strmMode.value = settings.strm_output_mode
+    strmTargetDir.value = settings.strm_target_dir
+    strmRules.value = settings.strm_rules.map((rule) => ({ ...rule }))
+  } else if (tab.value === 'jellyfin') {
+    jellyfinUrl.value = settings.jellyfin_url
+    jellyfinKey.value = ''
+  } else if (tab.value === 'general') {
+    allowedPaths.value = settings.allowed_paths.join('\n')
+    concurrency.value = settings.openlist_concurrency
+    timeout.value = settings.openlist_timeout
+    retry.value = settings.openlist_retry
+  }
+}
+
+watch(tab, () => {
+  error.value = ''
+})
+
 onMounted(loadInstances)
 </script>
 
@@ -375,430 +554,576 @@ onMounted(loadInstances)
     <ErrorBanner v-if="error" class="mb-4" :message="error" />
 
     <div class="settings-grid">
-      <nav class="panel settings-tabs" aria-label="设置分组">
+      <nav
+        class="panel settings-tabs"
+        role="tablist"
+        aria-orientation="vertical"
+        aria-label="设置分组"
+        @keydown.down.prevent="moveTab(1)"
+        @keydown.right.prevent="moveTab(1)"
+        @keydown.up.prevent="moveTab(-1)"
+        @keydown.left.prevent="moveTab(-1)"
+      >
+        <div class="tabs-head">
+          <span>CONFIG MAP</span>
+          <b>{{ readyCount }}/{{ tabs.length }}</b>
+        </div>
         <button
-          v-for="(item, index) in tabs"
+          v-for="item in tabs"
           :key="item.key"
+          :id="`set-tab-${item.key}`"
           class="stab"
           :class="{ on: tab === item.key }"
+          role="tab"
+          aria-controls="set-panel"
+          :aria-selected="tab === item.key"
+          :tabindex="tab === item.key ? 0 : -1"
           @click="tab = item.key"
         >
-          <span class="num">{{ String(index + 1).padStart(2, '0') }}</span>
-          {{ item.label }}
+          <span class="stab-ic"><AppIcon :name="item.icon" :size="15" /></span>
+          <span class="stab-body">
+            <b>{{ item.label }}</b>
+            <small>{{ item.en }}</small>
+          </span>
+          <span
+            class="stab-dot"
+            :class="tabState(item.key).tone"
+            :title="tabState(item.key).label"
+          />
         </button>
+        <div class="tabs-foot">
+          <div class="tabs-foot-row"><span>SETUP</span><b>{{ readyPercent }}%</b></div>
+          <div class="tabs-meter"><i :style="{ width: `${readyPercent}%` }" /></div>
+        </div>
       </nav>
 
       <div class="min-w-0">
-        <section v-if="tab === 'providers'" class="panel set-section">
-          <div class="set-title">
-            <h3><AppIcon name="sparkles" :size="15" class="text-amber" />媒体源</h3>
-            <StatusTag
-              :status="store.providers.some((provider) => provider.configured) ? 'success' : 'pending'"
-              :text="store.providers.some((provider) => provider.configured) ? 'CONNECTED' : 'MISSING'"
-            />
-          </div>
-          <p class="text-[11.5px] text-muted">刮削与季集信息依赖媒体源 API。</p>
-
-          <div class="mt-4">
-            <div v-for="provider in store.providers" :key="provider.name" class="instance">
-              <span class="cloud-ic"><AppIcon name="sparkles" :size="15" /></span>
-              <span class="body">
-                <b>{{ provider.label }}</b>
-                <small>{{ provider.configured ? '已配置，可用于搜索与匹配' : '未配置 API Key' }}</small>
+        <section
+          id="set-panel"
+          class="panel set-section"
+          role="tabpanel"
+          :aria-labelledby="`set-tab-${tab}`"
+        >
+          <header class="set-head">
+            <span class="set-index">{{ activeIndex }}</span>
+            <span class="set-ic"><AppIcon :name="activeTab.icon" :size="17" /></span>
+            <div class="set-heading">
+              <div class="set-kicker">{{ activeTab.en }}</div>
+              <h3>{{ activeTab.label }}</h3>
+              <p>{{ activeTab.desc }}</p>
+            </div>
+            <div class="set-side">
+              <StatusTag
+                v-if="tab === 'providers'"
+                :status="providerConnected ? 'success' : 'pending'"
+                :text="providerConnected ? 'CONNECTED' : 'MISSING'"
+              />
+              <StatusTag
+                v-else-if="tab === 'openlist'"
+                status="pending"
+                :text="`${instances.length} 个实例`"
+              />
+              <span v-else-if="tab === 'strm'" class="mode-pill amber">
+                {{ strmMode.toUpperCase() }}
               </span>
               <StatusTag
-                :status="provider.configured ? 'success' : 'pending'"
-                :text="provider.configured ? '已配置' : '未配置'"
+                v-else-if="tab === 'jellyfin'"
+                :status="jellyfinConfigured ? 'success' : 'pending'"
+                :text="jellyfinConfigured ? 'CONNECTED' : 'MISSING'"
               />
-            </div>
-
-            <div v-if="store.providers.length === 0" class="py-6 text-center text-xs text-faint">
-              暂无可用媒体源
-            </div>
-          </div>
-
-          <div class="mt-4 field">
-            <label>TMDB API Key <span>TMDB v3</span></label>
-            <div class="input-group">
-              <AppIcon name="eye" :size="14" />
-              <input
-                v-model="tmdbKey"
-                type="password"
-                :placeholder="
-                  store.settings?.has_tmdb_key ? '已保存，输入新 Key 可覆盖' : '填写 TMDB API Key'
-                "
-                autocomplete="off"
-              />
-              <button class="btn btn-sm btn-amber" :disabled="saving" @click="saveTmdbKey">保存</button>
-            </div>
-            <p class="mt-1.5 text-[11px] text-faint">
-              Key 仅保存在服务端，前端不会回显已保存的内容。
-            </p>
-          </div>
-        </section>
-
-        <section v-else-if="tab === 'openlist'" class="panel set-section">
-          <div class="set-title">
-            <h3><AppIcon name="cloud" :size="15" class="text-info" />OpenList 实例</h3>
-            <button class="btn btn-sm btn-amber" @click="openCreate">
-              <AppIcon name="plus" :size="13" />
-              新增实例
-            </button>
-          </div>
-
-          <div v-if="instancesLoading" class="space-y-2">
-            <div v-for="index in 2" :key="index" class="instance">
-              <span class="h-8 w-8 animate-pulse rounded-md bg-[var(--surface-2)]" />
-              <span class="h-3 flex-1 animate-pulse rounded bg-[var(--surface-2)]" />
-            </div>
-          </div>
-
-          <div v-else-if="instances.length === 0">
-            <EmptyState
-              icon="cloud"
-              title="还没有 OpenList 实例"
-              description="添加实例后即可在扫描页选择云盘目录。"
-            >
-              <button class="btn btn-amber" @click="openCreate">
-                <AppIcon name="plus" :size="14" />
+              <button v-if="tab === 'openlist'" class="btn btn-sm btn-amber" @click="openCreate">
+                <AppIcon name="plus" :size="13" />
                 新增实例
               </button>
-            </EmptyState>
-          </div>
-
-          <div v-else>
-            <div v-for="instance in instances" :key="instance.id" class="instance">
-              <span class="cloud-ic"><AppIcon name="cloud" :size="15" /></span>
-              <span class="body">
-                <b>{{ instance.name }}</b>
-                <small>
-                  {{ instance.base_url }} · {{ instance.username || '—' }} · {{ instance.timeout }}s /
-                  并发 {{ instance.concurrency }}
-                </small>
-                <small>挂载 {{ instance.mount_path || '/' }}</small>
-                <small
-                  v-if="testState[instance.id] && !testState[instance.id].ok"
-                  class="text-danger"
-                >
-                  {{ testState[instance.id].message }}
-                </small>
-              </span>
-              <StatusTag
-                :status="testState[instance.id]?.ok ? 'success' : 'pending'"
-                :text="
-                  testState[instance.id]
-                    ? testState[instance.id].ok
-                      ? '已连接'
-                      : '连接失败'
-                    : '未验证'
-                "
-              />
-              <span class="actions">
-                <button
-                  class="btn btn-xs"
-                  :disabled="testingId === instance.id"
-                  @click="testConnection(instance)"
-                >
-                  <AppIcon name="refresh" :size="12" :spin="testingId === instance.id" />
-                  测试
-                </button>
-                <button class="btn btn-xs btn-ghost" @click="openEdit(instance)">编辑</button>
-                <button class="btn btn-xs btn-danger" @click="deleteTarget = instance">删除</button>
-              </span>
             </div>
+          </header>
 
-            <div class="warn-note">
-              <AppIcon name="alert" :size="14" />
-              <span>删除实例前需确认无任务引用；密码字段仅提交，不回显。</span>
-            </div>
-          </div>
-        </section>
-
-        <section v-else-if="tab === 'template'" class="panel set-section">
-          <div class="set-title">
-            <h3><AppIcon name="rename" :size="15" class="text-amber" />命名模板</h3>
-            <button class="btn btn-sm btn-amber" :disabled="saving" @click="saveTemplate">保存模板</button>
-          </div>
-          <p class="text-[11.5px] text-muted">
-            用于生成最终文件名，数字变量支持 {season:02d} 形式的补零。
-          </p>
-
-          <div class="mt-4">
-            <TemplateEditor v-model="templateDraft" :sample="sample" />
-          </div>
-
-          <div class="mt-4 overflow-hidden rounded-lg border border-line">
-            <table class="w-full border-collapse text-xs">
-              <thead class="bg-[var(--bg-elevated)] text-left text-faint">
-                <tr>
-                  <th class="h-9 px-3 font-medium">变量</th>
-                  <th class="h-9 px-3 font-medium">说明</th>
-                  <th class="h-9 px-3 font-medium">示例</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-line/60">
-                <tr v-for="row in [
-                  { key: '{title}', text: '剧名', demo: 'Breaking Bad' },
-                  { key: '{year}', text: '年份', demo: '2008' },
-                  { key: '{season:02d}', text: '季（两位）', demo: '01' },
-                  { key: '{episode:02d}', text: '集（两位）', demo: '03' },
-                  { key: '{episode_title}', text: '集标题', demo: 'Pilot' },
-                  { key: '{resolution}', text: '分辨率', demo: '1080p' },
-                  { key: '{codec}', text: '视频编码', demo: 'x264' },
-                  { key: '{release_group}', text: '发布组', demo: 'DEMAND' },
-                ]" :key="row.key">
-                  <td class="h-9 px-3 font-mono text-accent">{{ row.key }}</td>
-                  <td class="h-9 px-3 text-muted">{{ row.text }}</td>
-                  <td class="h-9 px-3 font-mono text-faint">{{ row.demo }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section v-else-if="tab === 'strm'" class="panel set-section">
-          <div class="set-title">
-            <h3><AppIcon name="film" :size="15" class="text-info" />STRM 输出</h3>
-            <button class="btn btn-sm btn-amber" :disabled="saving" @click="saveStrm">保存设置</button>
-          </div>
-          <p class="text-[11.5px] text-muted">
-            重命名时勾选「生成 STRM」，为每个视频生成指向媒体源的 .strm 文件。
-          </p>
-
-          <div class="mt-4 field">
-            <label>链接模板 <span>URL TEMPLATE</span></label>
-            <input
-              v-model="strmTemplate"
-              class="input mono"
-              spellcheck="false"
-              placeholder="{base_url}/d/{path}"
-            />
-            <p class="mt-1.5 text-[11px] text-faint">
-              变量：{base_url} 数据源地址、{path} 视频路径（URL 编码）、{raw_path} 原始路径、{filename} 文件名。
-            </p>
-          </div>
-
-          <div class="mt-4">
-            <label class="field-label">输出方式 <span class="mono text-[8px] tracking-[0.16em] text-faint">OUTPUT MODE</span></label>
-            <div class="mode-grid mt-2">
-              <button
-                v-for="mode in [
-                  { value: 'alongside', title: 'ALONGSIDE', desc: '与视频同目录生成 STRM' },
-                  { value: 'library', title: 'LIBRARY', desc: '输出到统一媒体库目录' },
-                  { value: 'mirror', title: 'MIRROR', desc: '按源路径镜像到目标目录' },
-                ]"
-                :key="mode.value"
-                type="button"
-                class="mode"
-                :class="{ on: strmMode === mode.value }"
-                @click="setStrmMode(mode.value)"
-              >
-                <i />
-                <b>{{ mode.title }}</b>
-                <small>{{ mode.desc }}</small>
-              </button>
-            </div>
-          </div>
-
-          <div class="form-row mt-3">
-            <div class="field">
-              <label>目标目录 <span>TARGET DIR</span></label>
-              <input
-                v-model="strmTargetDir"
-                class="input mono"
-                :disabled="strmMode === 'alongside'"
-                placeholder="/data/media/strm"
-                spellcheck="false"
-              />
-            </div>
-            <div class="field">
-              <label>当前模式 <span>MODE</span></label>
-              <input class="input mono" :value="strmMode" disabled />
-            </div>
-          </div>
-          <p class="mt-1.5 text-[11px] text-faint">
-            本地视频的 STRM 内容为视频绝对路径；OpenList 视频按上方 URL 模板生成。
-          </p>
-
-          <div class="mt-5 border-t border-line pt-4">
-            <div class="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <h3 class="text-sm font-semibold text-ink">路径映射规则</h3>
-                <p class="mt-0.5 text-[11px] text-faint">
-                  按源路径最长前缀匹配，命中后按相对目录结构写入目标位置（目录不存在会自动创建），未命中时使用上方默认方式。
-                </p>
-              </div>
-              <button class="btn btn-xs btn-ghost" type="button" @click="addStrmRule">
-                新增规则
-              </button>
-            </div>
-
-            <div
-              v-if="!strmRules.length"
-              class="mt-3 rounded-lg border border-dashed border-line-2 px-3 py-4 text-center text-xs text-faint"
-            >
-              暂无规则
-            </div>
-
-            <div v-else class="mt-3 space-y-2">
-              <div
-                v-for="(rule, index) in strmRules"
-                :key="index"
-                class="grid gap-2 rounded-lg border border-line p-2.5 md:grid-cols-[1.2fr_0.9fr_1.2fr_auto]"
-              >
-                <div>
-                  <label class="label">源路径前缀</label>
-                  <input
-                    v-model="rule.source"
-                    class="input mono"
-                    placeholder="/cloud/美剧"
-                    spellcheck="false"
-                  />
+          <Transition name="fade" mode="out-in">
+            <div :key="tab" class="set-body">
+              <template v-if="tab === 'providers'">
+                <div class="set-block">
+                  <div class="block-head">
+                    <h4>可用媒体源</h4>
+                    <span class="block-note">PROVIDER REGISTRY</span>
+                  </div>
+                  <div class="provider-list">
+                    <div v-for="provider in store.providers" :key="provider.name" class="instance">
+                      <span class="cloud-ic"><AppIcon name="sparkles" :size="15" /></span>
+                      <span class="body">
+                        <b>{{ provider.label }}</b>
+                        <small>
+                          {{ provider.configured ? '已连接 · 可用于搜索与匹配' : '尚未配置 API Key' }}
+                        </small>
+                      </span>
+                      <StatusTag
+                        :status="provider.configured ? 'success' : 'pending'"
+                        :text="provider.configured ? '已配置' : '未配置'"
+                      />
+                    </div>
+                    <div v-if="store.providers.length === 0" class="blank-note">暂无可用媒体源</div>
+                  </div>
                 </div>
-                <div>
-                  <label class="label">目标</label>
-                  <SelectMenu
-                    v-model="rule.target_type"
-                    class="h-9"
-                    :options="[
-                      { value: 'local', label: '本地目录' },
-                      { value: 'openlist', label: 'OpenList' },
-                    ]"
-                  />
-                  <SelectMenu
-                    v-if="rule.target_type === 'openlist'"
-                    v-model="rule.target_id"
-                    class="mt-1.5 h-9"
-                    :options="instances.map((i) => ({ value: i.id, label: i.name }))"
-                    placeholder="选择实例"
-                  />
+
+                <div class="cred-card">
+                  <div class="cred-head">
+                    <span class="cred-ic"><AppIcon name="sparkles" :size="15" /></span>
+                    <div class="cred-title">
+                      <b>TMDB API Key</b>
+                      <small>THE MOVIE DATABASE · v3</small>
+                    </div>
+                    <StatusTag
+                      :status="store.settings?.has_tmdb_key ? 'success' : 'pending'"
+                      :text="store.settings?.has_tmdb_key ? '已保存' : '未保存'"
+                    />
+                    <a
+                      class="cred-link"
+                      href="https://www.themoviedb.org/settings/api"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      获取 Key
+                      <AppIcon name="external" :size="11" />
+                    </a>
+                  </div>
+                  <div class="field mt-3">
+                    <label>API Key <span>TMDB v3 · 服务端存储</span></label>
+                    <div class="input-group">
+                      <AppIcon name="eye" :size="14" />
+                      <input
+                        v-model="tmdbKey"
+                        type="password"
+                        :placeholder="
+                          store.settings?.has_tmdb_key
+                            ? '已保存，输入新 Key 可覆盖'
+                            : '填写 TMDB API Key'
+                        "
+                        autocomplete="off"
+                      />
+                    </div>
+                  </div>
+                  <p class="hint-line">Key 仅保存在服务端，前端不会回显已保存的内容。</p>
                 </div>
-                <div>
-                  <label class="label">目标目录</label>
-                  <input
-                    v-model="rule.target_dir"
-                    class="input mono"
-                    placeholder="/strm/美剧"
-                    spellcheck="false"
-                  />
+              </template>
+
+              <template v-else-if="tab === 'openlist'">
+                <div class="set-block">
+                  <div class="block-head">
+                    <h4>实例列表</h4>
+                    <div class="block-actions">
+                      <span class="block-note">
+                        {{ store.datasources.filter((item) => item.type === 'openlist').length }} 个已接入扫描
+                      </span>
+                      <button
+                        class="btn btn-xs btn-ghost"
+                        :disabled="instancesLoading"
+                        @click="loadInstances"
+                      >
+                        <AppIcon name="refresh" :size="12" :spin="instancesLoading" />
+                        刷新
+                      </button>
+                    </div>
+                  </div>
+
+                  <div v-if="instancesLoading" class="ol-grid">
+                    <div v-for="index in 2" :key="index" class="ol-card ol-skeleton">
+                      <span class="h-8 w-8 animate-pulse rounded-lg bg-[var(--surface-2)]" />
+                      <span class="h-3 flex-1 animate-pulse rounded bg-[var(--surface-2)]" />
+                    </div>
+                  </div>
+
+                  <EmptyState
+                    v-else-if="instances.length === 0"
+                    icon="cloud"
+                    title="还没有 OpenList 实例"
+                    description="添加实例后即可在扫描页选择云盘目录。"
+                  >
+                    <button class="btn btn-amber" @click="openCreate">
+                      <AppIcon name="plus" :size="14" />
+                      新增实例
+                    </button>
+                  </EmptyState>
+
+                  <div v-else class="ol-grid">
+                    <article v-for="instance in instances" :key="instance.id" class="ol-card">
+                      <header>
+                        <span class="ol-mark">{{ initial(instance.name) }}</span>
+                        <span class="ol-title">
+                          <b>{{ instance.name }}</b>
+                          <small>{{ instance.base_url }}</small>
+                        </span>
+                        <StatusTag
+                          :status="testState[instance.id]?.ok ? 'success' : 'pending'"
+                          :text="
+                            testState[instance.id]
+                              ? testState[instance.id].ok
+                                ? '已连接'
+                                : '连接失败'
+                              : '未验证'
+                          "
+                        />
+                      </header>
+
+                      <div class="ol-meta">
+                        <span><em>USER</em>{{ instance.username || '—' }}</span>
+                        <span><em>TIMEOUT</em>{{ instance.timeout }}s</span>
+                        <span><em>CONCURRENCY</em>{{ instance.concurrency }}</span>
+                        <span><em>MOUNT</em>{{ instance.mount_path || '/' }}</span>
+                      </div>
+
+                      <p
+                        v-if="testState[instance.id]"
+                        class="ol-test"
+                        :class="testState[instance.id].ok ? 'ok' : 'bad'"
+                      >
+                        <AppIcon
+                          :name="testState[instance.id].ok ? 'check-circle' : 'alert'"
+                          :size="12"
+                        />
+                        {{ testState[instance.id].message }}
+                      </p>
+
+                      <footer class="ol-foot">
+                        <button
+                          class="btn btn-xs"
+                          :disabled="testingId === instance.id"
+                          @click="testConnection(instance)"
+                        >
+                          <AppIcon name="refresh" :size="12" :spin="testingId === instance.id" />
+                          测试连接
+                        </button>
+                        <button class="btn btn-xs btn-ghost" @click="openEdit(instance)">编辑</button>
+                        <button class="btn btn-xs btn-danger" @click="deleteTarget = instance">
+                          删除
+                        </button>
+                      </footer>
+                    </article>
+                  </div>
+
+                  <div class="warn-note mt-3">
+                    <AppIcon name="alert" :size="14" />
+                    <span>删除实例前需确认无任务引用；密码字段仅提交，不回显。</span>
+                  </div>
                 </div>
-                <button
-                  class="btn btn-xs btn-ghost self-end text-danger"
-                  type="button"
-                  @click="removeStrmRule(index)"
-                >
-                  删除
-                </button>
-              </div>
+              </template>
+
+              <template v-else-if="tab === 'template'">
+                <div class="tpl-grid">
+                  <div class="set-block">
+                    <div class="block-head">
+                      <h4>模板编辑器</h4>
+                      <span class="block-note">RENAME PATTERN</span>
+                    </div>
+                    <TemplateEditor v-model="templateDraft" :sample="sample" />
+                    <p class="hint-line mt-2">
+                      数字变量支持 {season:02d} 形式的补零，点击变量即可插入到光标位置。
+                    </p>
+                  </div>
+
+                  <aside class="var-panel">
+                    <div class="block-head">
+                      <h4>变量参考</h4>
+                      <span class="block-note">TOKENS</span>
+                    </div>
+                    <div class="var-list">
+                      <div
+                        v-for="row in [
+                          { key: '{title}', text: '剧名', demo: 'Breaking Bad' },
+                          { key: '{year}', text: '年份', demo: '2008' },
+                          { key: '{season:02d}', text: '季（两位）', demo: '01' },
+                          { key: '{episode:02d}', text: '集（两位）', demo: '03' },
+                          { key: '{episode_title}', text: '集标题', demo: 'Pilot' },
+                          { key: '{resolution}', text: '分辨率', demo: '1080p' },
+                          { key: '{codec}', text: '视频编码', demo: 'x264' },
+                          { key: '{release_group}', text: '发布组', demo: 'DEMAND' },
+                        ]"
+                        :key="row.key"
+                        class="var-row"
+                      >
+                        <code>{{ row.key }}</code>
+                        <span>{{ row.text }}</span>
+                        <em>{{ row.demo }}</em>
+                      </div>
+                    </div>
+                  </aside>
+                </div>
+              </template>
+
+              <template v-else-if="tab === 'strm'">
+                <div class="set-block">
+                  <div class="block-head">
+                    <h4>链接模板</h4>
+                    <span class="block-note">URL TEMPLATE</span>
+                  </div>
+                  <div class="field">
+                    <label>
+                      播放地址
+                      <span>{base_url} · {path} · {raw_path} · {filename}</span>
+                    </label>
+                    <input
+                      v-model="strmTemplate"
+                      class="input mono"
+                      spellcheck="false"
+                      placeholder="{base_url}/d/{path}"
+                    />
+                    <p class="hint-line">
+                      变量：{base_url} 数据源地址、{path} 视频路径（URL 编码）、{raw_path} 原始路径、{filename} 文件名。
+                    </p>
+                  </div>
+                </div>
+
+                <div class="set-block">
+                  <div class="block-head">
+                    <h4>输出方式</h4>
+                    <span class="block-note">OUTPUT MODE</span>
+                  </div>
+                  <div class="mode-grid">
+                    <button
+                      v-for="(mode, index) in [
+                        { value: 'alongside', title: 'ALONGSIDE', desc: '与视频同目录生成 STRM' },
+                        { value: 'library', title: 'LIBRARY', desc: '输出到统一媒体库目录' },
+                        { value: 'mirror', title: 'MIRROR', desc: '按源路径镜像到目标目录' },
+                      ]"
+                      :key="mode.value"
+                      type="button"
+                      class="mode"
+                      :class="{ on: strmMode === mode.value }"
+                      @click="setStrmMode(mode.value)"
+                    >
+                      <span class="mode-top">
+                        <span class="mode-idx">0{{ index + 1 }}</span>
+                        <i class="mode-radio" />
+                      </span>
+                      <b>{{ mode.title }}</b>
+                      <small>{{ mode.desc }}</small>
+                    </button>
+                  </div>
+
+                  <div class="field mt-3">
+                    <label>目标目录 <span>TARGET DIR · 非 ALONGSIDE 模式生效</span></label>
+                    <input
+                      v-model="strmTargetDir"
+                      class="input mono"
+                      :disabled="strmMode === 'alongside'"
+                      placeholder="/data/media/strm"
+                      spellcheck="false"
+                    />
+                  </div>
+                  <p class="hint-line">
+                    本地视频的 STRM 内容为视频绝对路径；OpenList 视频按上方 URL 模板生成。
+                  </p>
+                </div>
+
+                <div class="set-block">
+                  <div class="block-head">
+                    <div>
+                      <h4>路径映射规则</h4>
+                      <p class="block-desc">
+                        按源路径最长前缀匹配，命中后按相对目录结构写入目标位置，未命中时使用上方默认方式。
+                      </p>
+                    </div>
+                    <button class="btn btn-xs btn-ghost" type="button" @click="addStrmRule">
+                      <AppIcon name="plus" :size="12" />
+                      新增规则
+                    </button>
+                  </div>
+
+                  <div v-if="!strmRules.length" class="rule-empty">
+                    <AppIcon name="filter" :size="15" />
+                    <span>暂无规则，所有路径都将使用上方默认输出方式。</span>
+                  </div>
+
+                  <div v-else class="rule-list">
+                    <div v-for="(rule, index) in strmRules" :key="index" class="rule-card">
+                      <div class="rule-head">
+                        <span class="rule-idx">RULE {{ String(index + 1).padStart(2, '0') }}</span>
+                        <button
+                          class="btn btn-xs btn-ghost text-danger"
+                          type="button"
+                          @click="removeStrmRule(index)"
+                        >
+                          <AppIcon name="trash" :size="12" />
+                          删除
+                        </button>
+                      </div>
+                      <div class="rule-fields">
+                        <div class="field">
+                          <label>源路径前缀 <span>SOURCE</span></label>
+                          <input
+                            v-model="rule.source"
+                            class="input mono"
+                            placeholder="/cloud/美剧"
+                            spellcheck="false"
+                          />
+                        </div>
+                        <span class="rule-arrow"><AppIcon name="arrow-right" :size="14" /></span>
+                        <div class="field">
+                          <label>目标类型 <span>TARGET</span></label>
+                          <SelectMenu
+                            v-model="rule.target_type"
+                            class="h-9"
+                            :options="[
+                              { value: 'local', label: '本地目录' },
+                              { value: 'openlist', label: 'OpenList' },
+                            ]"
+                          />
+                          <SelectMenu
+                            v-if="rule.target_type === 'openlist'"
+                            v-model="rule.target_id"
+                            class="mt-1.5 h-9"
+                            :options="instances.map((i) => ({ value: i.id, label: i.name }))"
+                            placeholder="选择实例"
+                          />
+                        </div>
+                        <div class="field">
+                          <label>目标目录 <span>DEST</span></label>
+                          <input
+                            v-model="rule.target_dir"
+                            class="input mono"
+                            placeholder="/strm/美剧"
+                            spellcheck="false"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+
+              <template v-else-if="tab === 'jellyfin'">
+                <div class="conn-card" :class="{ ok: jellyfinConfigured }">
+                  <span class="conn-orb"><i /></span>
+                  <span class="conn-copy">
+                    <b>{{ jellyfinConfigured ? '已配置服务器' : '尚未配置服务器' }}</b>
+                    <small>
+                      {{ store.settings?.jellyfin_url || '填写下方服务器地址与 API Key' }}
+                    </small>
+                  </span>
+                  <button
+                    class="btn btn-sm"
+                    :disabled="jellyfinTesting || !jellyfinConfigured"
+                    title="使用已保存的配置测试连接"
+                    @click="testJellyfin"
+                  >
+                    <AppIcon name="refresh" :size="13" :spin="jellyfinTesting" />
+                    测试连接
+                  </button>
+                </div>
+
+                <div class="set-block mt-4">
+                  <div class="block-head">
+                    <h4>服务器接入</h4>
+                    <span class="block-note">CONNECTION</span>
+                  </div>
+                  <div class="form-row">
+                    <div class="field">
+                      <label>服务器地址 <span>BASE URL</span></label>
+                      <input
+                        v-model="jellyfinUrl"
+                        class="input mono"
+                        placeholder="http://192.168.1.10:8096"
+                        spellcheck="false"
+                      />
+                    </div>
+                    <div class="field">
+                      <label>API Key <span>API KEY</span></label>
+                      <div class="input-group">
+                        <AppIcon name="eye" :size="14" />
+                        <input
+                          v-model="jellyfinKey"
+                          type="password"
+                          :placeholder="
+                            store.settings?.has_jellyfin_key
+                              ? '已保存，输入新 Key 可覆盖'
+                              : '在 Jellyfin 控制台 → API 密钥中创建'
+                          "
+                          autocomplete="off"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <p class="hint-line mt-2">
+                    配置后可在「刷新」步骤中刷新指定的媒体库；Key 仅保存在服务端。
+                  </p>
+                </div>
+              </template>
+
+              <template v-else>
+                <div class="set-block">
+                  <div class="block-head">
+                    <h4>本地目录白名单</h4>
+                    <span class="block-note">{{ pathCount }} 条路径</span>
+                  </div>
+                  <div class="field">
+                    <label>允许扫描的目录 <span>ALLOWED PATHS · 每行一个</span></label>
+                    <textarea
+                      v-model="allowedPaths"
+                      class="textarea"
+                      rows="5"
+                      placeholder="/data/media/tv"
+                      spellcheck="false"
+                    />
+                    <p class="hint-line">扫描页的本地路径只能位于白名单目录之内。</p>
+                  </div>
+                </div>
+
+                <div class="set-block">
+                  <div class="block-head">
+                    <h4>OpenList 请求参数</h4>
+                    <span class="block-note">NETWORK</span>
+                  </div>
+                  <div class="num-grid">
+                    <div class="num-card">
+                      <span class="k">并发数 <em>CONCURRENCY</em></span>
+                      <input
+                        v-model.number="concurrency"
+                        type="number"
+                        min="1"
+                        max="16"
+                        class="input mono"
+                      />
+                      <span class="num-range">RANGE 1 – 16</span>
+                    </div>
+                    <div class="num-card">
+                      <span class="k">请求超时 <em>TIMEOUT</em></span>
+                      <input
+                        v-model.number="timeout"
+                        type="number"
+                        min="5"
+                        max="300"
+                        class="input mono"
+                      />
+                      <span class="num-range">RANGE 5 – 300 秒</span>
+                    </div>
+                    <div class="num-card">
+                      <span class="k">失败重试 <em>RETRY</em></span>
+                      <input
+                        v-model.number="retry"
+                        type="number"
+                        min="0"
+                        max="5"
+                        class="input mono"
+                      />
+                      <span class="num-range">RANGE 0 – 5 次</span>
+                    </div>
+                  </div>
+                </div>
+              </template>
             </div>
-          </div>
+          </Transition>
         </section>
 
-        <section v-else-if="tab === 'jellyfin'" class="panel set-section">
-          <div class="set-title">
-            <h3><AppIcon name="server" :size="15" class="text-success" />Jellyfin</h3>
-            <StatusTag
-              :status="store.settings?.jellyfin_url && store.settings?.has_jellyfin_key ? 'success' : 'pending'"
-              :text="store.settings?.jellyfin_url && store.settings?.has_jellyfin_key ? '已配置' : '未配置'"
-            />
-          </div>
-          <p class="text-[11.5px] text-muted">
-            配置后可在「刷新」步骤中刷新指定的 Jellyfin 媒体库。
-          </p>
-
-          <div class="form-row mt-4">
-            <div class="field">
-              <label>服务器地址 <span>BASE URL</span></label>
-              <input
-                v-model="jellyfinUrl"
-                class="input mono"
-                placeholder="http://192.168.1.10:8096"
-                spellcheck="false"
-              />
-            </div>
-            <div class="field">
-              <label>API Key <span>API KEY</span></label>
-              <div class="input-group">
-                <AppIcon name="eye" :size="14" />
-                <input
-                  v-model="jellyfinKey"
-                  type="password"
-                  :placeholder="
-                    store.settings?.has_jellyfin_key
-                      ? '已保存，输入新 Key 可覆盖'
-                      : '在 Jellyfin 控制台 → API 密钥中创建'
-                  "
-                  autocomplete="off"
-                />
-              </div>
-            </div>
-          </div>
-          <p class="mt-1.5 text-[11px] text-faint">
-            Key 仅保存在服务端，前端不会回显已保存的内容。
-          </p>
-
-          <div class="form-actions">
-            <button
-              class="btn btn-sm"
-              :disabled="jellyfinTesting || !store.settings?.jellyfin_url || !store.settings?.has_jellyfin_key"
-              title="使用已保存的配置测试连接"
-              @click="testJellyfin"
-            >
-              <AppIcon name="refresh" :size="13" :spin="jellyfinTesting" />
-              测试连接
-            </button>
-            <button class="btn btn-sm btn-amber" :disabled="saving" @click="saveJellyfin">
-              保存设置
-            </button>
-          </div>
-        </section>
-
-        <section v-else class="panel set-section">
-          <div class="set-title">
-            <h3><AppIcon name="settings" :size="15" class="text-muted" />通用</h3>
-            <span class="sub">ADVANCED</span>
-          </div>
-          <p class="text-[11.5px] text-muted">本地目录白名单与 OpenList 请求参数。</p>
-
-          <div class="field mt-4">
-            <label>本地目录白名单 <span>ALLOWED PATHS · 每行一个</span></label>
-            <textarea
-              v-model="allowedPaths"
-              class="textarea"
-              rows="5"
-              placeholder="/data/media/tv"
-              spellcheck="false"
-            />
-            <p class="mt-1.5 text-[11px] text-faint">
-              扫描页的本地路径只能位于白名单目录之内。
-            </p>
-          </div>
-
-          <div class="form-row three mt-3">
-            <div class="field">
-              <label>OpenList 并发 <span>CONCURRENCY</span></label>
-              <input v-model.number="concurrency" type="number" min="1" max="16" class="input mono" />
-            </div>
-            <div class="field">
-              <label>请求超时（秒） <span>TIMEOUT</span></label>
-              <input v-model.number="timeout" type="number" min="5" max="300" class="input mono" />
-            </div>
-            <div class="field">
-              <label>失败重试次数 <span>RETRY</span></label>
-              <input v-model.number="retry" type="number" min="0" max="5" class="input mono" />
-            </div>
-          </div>
-
-          <div class="form-actions">
-            <button class="btn btn-sm btn-amber" :disabled="saving" @click="saveGeneral">
-              保存设置
-            </button>
-          </div>
-        </section>
-
-        <p class="mt-3 text-[11px] text-faint">
-          当前分组 · <span class="text-muted">{{ selected?.label }}</span>
-        </p>
+        <footer v-if="tab !== 'openlist'" class="save-bar" :class="{ dirty }">
+          <span class="save-state"><i />{{ dirty ? '有未保存的更改' : '已与服务器同步' }}</span>
+          <span class="save-tip">{{ dirty ? '保存后立即生效' : '修改任意选项以启用保存' }}</span>
+          <span class="save-spacer" />
+          <button class="btn btn-sm btn-ghost" :disabled="!dirty || saving" @click="resetCurrent">
+            重置
+          </button>
+          <button class="btn btn-sm btn-amber" :disabled="!dirty || saving" @click="saveCurrent">
+            <AppIcon v-if="saving" name="loader" :size="13" spin />
+            {{ saving ? '保存中…' : saveLabel }}
+          </button>
+        </footer>
       </div>
     </div>
 

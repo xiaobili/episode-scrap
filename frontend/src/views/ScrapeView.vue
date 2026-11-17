@@ -10,14 +10,13 @@ import ErrorBanner from '@/components/ErrorBanner.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import Pager from '@/components/Pager.vue'
 import ShowCard from '@/components/ShowCard.vue'
-import StatusTag from '@/components/StatusTag.vue'
 import SelectMenu from '@/components/SelectMenu.vue'
 import type { SlateRow } from '@/components/ui-types'
 import { usePagination } from '@/composables/usePagination'
 import { useRecentSearches } from '@/composables/useRecentSearches'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
-import type { Episode, Show, ShowDetail } from '@/types'
+import type { Episode, MediaFile, Show, ShowDetail } from '@/types'
 
 const store = useWorkflowStore()
 const router = useRouter()
@@ -82,6 +81,16 @@ const slate = computed<SlateRow[]>(() => [
 function useRecent(value: string) {
   query.value = value
   void search()
+}
+
+function fileMatchState(file: MediaFile): 'match' | 'review' | 'idle' {
+  const parsed = file.parsed
+  if (!parsed || parsed.episode === null || parsed.episode === undefined) return 'idle'
+  const seasonNo = parsed.season ?? season.value
+  if (seasonNo === null) return 'idle'
+  const list = episodesBySeason.value[seasonNo] ?? []
+  if (list.length === 0) return 'idle'
+  return list.some((item) => item.episode === parsed.episode) ? 'match' : 'review'
 }
 
 function messageOf(err: unknown) {
@@ -233,11 +242,11 @@ onMounted(() => {
             />
           </div>
 
-          <div class="input-group" style="width: 140px">
+          <div class="input-group" style="width: 152px">
             <AppIcon name="film" :size="14" />
             <SelectMenu
               v-model="provider"
-              class="!h-[30px] !w-full !border-0 !bg-transparent !px-0"
+              class="!w-full"
               :options="providers.map((p) => ({ value: p.name, label: p.label }))"
             />
           </div>
@@ -280,14 +289,19 @@ onMounted(() => {
     </div>
 
     <div v-else class="scrape-grid">
-      <section class="panel">
+      <section class="panel scrape-panel">
         <div class="panel-head">
           <span class="panel-title">PENDING <b>待匹配</b></span>
           <span class="mono dim" style="font-size: 9.5px">{{ parsedFiles.length }}</span>
         </div>
 
-        <div>
-          <label v-for="file in pageItems" :key="file.id" class="pick-row">
+        <div class="pick-list">
+          <label
+            v-for="file in pageItems"
+            :key="file.id"
+            class="pick-row"
+            :class="{ sel: store.selectedSet.has(file.id) }"
+          >
             <input
               type="checkbox"
               :checked="store.selectedSet.has(file.id)"
@@ -304,7 +318,9 @@ onMounted(() => {
               </b>
               <small>{{ file.parsed?.episode_title ?? file.parsed?.title ?? file.original_name }}</small>
             </span>
-            <StatusTag :status="file.status" />
+            <span v-if="fileMatchState(file) === 'match'" class="tag tag-ok">MATCH</span>
+            <span v-else-if="fileMatchState(file) === 'review'" class="tag tag-warn">REVIEW</span>
+            <span v-else class="tag tag-mute">待匹配</span>
           </label>
         </div>
 
@@ -314,10 +330,11 @@ onMounted(() => {
           v-model:page-size="pageSize"
           :total="total"
           :page-count="pageCount"
+          compact
         />
       </section>
 
-      <section class="panel">
+      <section class="panel scrape-panel">
         <div class="panel-head">
           <span class="panel-title">CANDIDATES <b>候选剧集</b></span>
           <span class="panel-side mono dim" style="font-size: 9.5px">
@@ -325,7 +342,7 @@ onMounted(() => {
           </span>
         </div>
 
-        <div v-if="searching" class="show-grid">
+        <div v-if="searching" class="show-grid candidate-grid">
           <div
             v-for="index in 4"
             :key="index"
@@ -333,7 +350,7 @@ onMounted(() => {
           />
         </div>
 
-        <div v-else-if="results.length" class="show-grid" style="max-height: calc(100vh - 300px); overflow-y: auto">
+        <div v-else-if="results.length" class="show-grid candidate-grid">
           <ShowCard
             v-for="show in results"
             :key="show.id"
@@ -343,16 +360,17 @@ onMounted(() => {
           />
         </div>
 
-        <EmptyState
-          v-else
-          icon="scrape"
-          :title="searched ? '没有找到匹配的剧集' : '搜索剧集开始刮削'"
-          :description="
-            searched
-              ? '换个关键词，或切换媒体源后再试。'
-              : '在顶部输入剧名，选择正确的剧集后即可自动对齐季集。'
-          "
-        />
+        <div v-else class="flex flex-1 items-center justify-center">
+          <EmptyState
+            icon="scrape"
+            :title="searched ? '没有找到匹配的剧集' : '搜索剧集开始刮削'"
+            :description="
+              searched
+                ? '换个关键词，或切换媒体源后再试。'
+                : '在顶部输入剧名，选择正确的剧集后即可自动对齐季集。'
+            "
+          />
+        </div>
 
         <div v-if="recentSearches.length" class="recent-searches">
           <span class="lbl">RECENT</span>
@@ -366,7 +384,7 @@ onMounted(() => {
           </button>
         </div>
 
-        <div style="padding: 10px 12px">
+        <div v-if="results.length" class="candidate-legend">
           <div class="legend">
             <span><i style="background: var(--amber)" />已选择</span>
             <span><i style="background: var(--line-2)" />hover 预览</span>
@@ -375,7 +393,7 @@ onMounted(() => {
         </div>
       </section>
 
-      <section class="panel flex flex-col">
+      <section class="panel scrape-panel">
         <div class="panel-head">
           <span class="panel-title">MAPPING <b>匹配关系</b></span>
           <span class="mono dim" style="font-size: 9.5px">
@@ -383,7 +401,7 @@ onMounted(() => {
           </span>
         </div>
 
-        <div v-if="!chosen" class="flex-1">
+        <div v-if="!chosen" class="flex flex-1 items-center justify-center">
           <EmptyState icon="film" title="尚未选择剧集" description="从中间候选列表选择一部剧集。" />
         </div>
 
@@ -421,7 +439,7 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="min-h-0 flex-1">
+          <div class="min-h-0 flex-1 overflow-y-auto">
             <EpisodeMapper
               v-if="episodes.length"
               :files="targetFiles"
@@ -431,7 +449,9 @@ onMounted(() => {
             <div v-else-if="detailLoading" class="space-y-2 p-3">
               <div v-for="index in 5" :key="index" class="h-9 animate-pulse rounded bg-[var(--surface-2)]" />
             </div>
-            <EmptyState v-else icon="film" title="该季暂无剧集信息" description="请切换季或换一部剧集。" />
+            <div v-else class="flex h-full items-center justify-center">
+              <EmptyState icon="film" title="该季暂无剧集信息" description="请切换季或换一部剧集。" />
+            </div>
           </div>
 
           <div class="map-foot">
