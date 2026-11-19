@@ -8,6 +8,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import DiffText from '@/components/DiffText.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorBanner from '@/components/ErrorBanner.vue'
+import GroupPanel from '@/components/GroupPanel.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import Pager from '@/components/Pager.vue'
 import SegmentedControl from '@/components/SegmentedControl.vue'
@@ -15,10 +16,14 @@ import StatusTag from '@/components/StatusTag.vue'
 import TaskProgress from '@/components/TaskProgress.vue'
 import TemplateEditor from '@/components/TemplateEditor.vue'
 import ToggleSwitch from '@/components/ToggleSwitch.vue'
-import type { SlateRow } from '@/components/ui-types'
+import type { GroupBadge, SlateRow } from '@/components/ui-types'
+import { useFolderGroups } from '@/composables/useFolderGroups'
+import type { FolderGroup, SeasonFolderGroup } from '@/composables/useFolderGroups'
+import { useGroupExpansion } from '@/composables/useGroupExpansion'
 import { usePagination } from '@/composables/usePagination'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
+import type { PreviewItem } from '@/types'
 
 const store = useWorkflowStore()
 const router = useRouter()
@@ -86,7 +91,18 @@ function restoreTemplate() {
   template.value = store.settings?.rename_template ?? ''
 }
 
-const { page, pageSize, total, pageCount, pageItems } = usePagination(items)
+const fileById = computed(() => new Map(store.files.map((file) => [file.id, file])))
+
+const { groups } = useFolderGroups(items, {
+  getPath: (item) => fileById.value.get(item.file_id)?.source_ref ?? null,
+  getSourceType: (item) => fileById.value.get(item.file_id)?.source_type ?? 'local',
+  getOpenlistId: (item) => fileById.value.get(item.file_id)?.openlist_id ?? null,
+  getName: (item) => item.original_name,
+  unknownTitle: '未知文件夹',
+})
+
+const { page, pageSize, total, pageCount, pageItems: pageGroups } = usePagination(groups)
+const { isShowOpen, isSeasonOpen, toggleShow, toggleSeason } = useGroupExpansion(groups)
 
 watch(
   () => store.settings?.rename_template,
@@ -142,6 +158,63 @@ function toggleAllReady() {
     chosenItems.value.length === readyItems.value.length
       ? []
       : readyItems.value.map((item) => item.file_id)
+}
+
+function readyOf(items: PreviewItem[]): PreviewItem[] {
+  return items.filter((item) => item.status === 'ready')
+}
+
+function groupSelected(items: PreviewItem[]): boolean {
+  const ready = readyOf(items)
+  return ready.length > 0 && ready.every((item) => includeIds.value.includes(item.file_id))
+}
+
+function groupIndeterminate(items: PreviewItem[]): boolean {
+  return (
+    !groupSelected(items) &&
+    readyOf(items).some((item) => includeIds.value.includes(item.file_id))
+  )
+}
+
+function toggleItems(items: PreviewItem[]) {
+  const ids = readyOf(items).map((item) => item.file_id)
+  if (ids.length === 0) return
+  if (groupSelected(items)) {
+    includeIds.value = includeIds.value.filter((id) => !ids.includes(id))
+  } else {
+    includeIds.value = Array.from(new Set([...includeIds.value, ...ids]))
+  }
+}
+
+function groupBadges(items: PreviewItem[]): GroupBadge[] {
+  const badges: GroupBadge[] = []
+  const ready = items.filter((item) => item.status === 'ready').length
+  const conflicts = items.filter((item) => item.status === 'conflict').length
+  const skipped = items.filter((item) => item.status === 'skipped').length
+  const failed = items.filter((item) => item.status === 'error').length
+  if (ready) badges.push({ label: `${ready} READY`, tone: 'ok' })
+  if (conflicts) badges.push({ label: `${conflicts} 冲突`, tone: 'warn' })
+  if (skipped) badges.push({ label: `${skipped} 跳过`, tone: 'mute' })
+  if (failed) badges.push({ label: `${failed} 错误`, tone: 'bad' })
+  return badges
+}
+
+function folderMeta(group: FolderGroup<PreviewItem>): string[] {
+  const parts = [`${group.items.length} 项`]
+  if (group.seasonCount > 0) parts.push(`${group.seasonCount} 季`)
+  return parts
+}
+
+function seasonMeta(season: SeasonFolderGroup<PreviewItem>): string[] {
+  return [`${season.items.length} 项`]
+}
+
+function seasonLabel(season: SeasonFolderGroup<PreviewItem>): string {
+  return season.direct ? '本目录' : season.name
+}
+
+function groupIndexLabel(index: number): string {
+  return String((page.value - 1) * pageSize.value + index + 1).padStart(2, '0')
 }
 
 async function execute() {
@@ -322,8 +395,8 @@ onBeforeUnmount(disconnect)
           <EmptyState icon="filter" title="没有可处理的项目" description="检查当前选择与解析结果后重试。" />
         </div>
 
-        <div v-else class="overflow-x-auto">
-          <table class="min-w-[760px]">
+        <div v-else class="group-scroll overflow-x-auto">
+          <table class="group-table min-w-[760px]">
             <thead>
               <tr>
                 <th class="cb pl-4">
@@ -339,31 +412,84 @@ onBeforeUnmount(disconnect)
                 <th class="w-44">说明</th>
               </tr>
             </thead>
-            <tbody>
-              <tr
-                v-for="item in pageItems"
-                :key="item.file_id"
-                :class="{ sel: item.status === 'conflict' }"
-              >
-                <td class="cb pl-4">
-                  <input
-                    type="checkbox"
-                    :checked="includeIds.includes(item.file_id)"
-                    :disabled="item.status !== 'ready'"
-                    :aria-label="`选择 ${item.original_name}`"
-                    @change="toggleInclude(item.file_id)"
+
+            <tbody
+              v-for="(group, groupIndex) in pageGroups"
+              :key="group.key"
+              class="group-body"
+            >
+              <tr class="group-row">
+                <td colspan="4" class="group-cell">
+                  <GroupPanel
+                    level="folder"
+                    :index="groupIndexLabel(groupIndex)"
+                    :title="group.title"
+                    :path="group.path"
+                    :expanded="isShowOpen(group.key)"
+                    :selectable="readyOf(group.items).length > 0"
+                    :checked="groupSelected(group.items)"
+                    :indeterminate="groupIndeterminate(group.items)"
+                    :check-label="`选择 ${group.title} 的可执行项`"
+                    :meta="folderMeta(group)"
+                    :badges="groupBadges(group.items)"
+                    @toggle="toggleShow(group.key)"
+                    @check="toggleItems(group.items)"
                   />
                 </td>
-                <td class="max-w-0">
-                  <DiffText :before="item.original_name" :after="item.new_name ?? '—'" />
-                </td>
-                <td><StatusTag :status="item.status" /></td>
-                <td>
-                  <span class="block truncate text-[11.5px] text-faint" :title="item.reason ?? ''">
-                    {{ item.reason ?? '—' }}
-                  </span>
-                </td>
               </tr>
+
+              <template v-if="isShowOpen(group.key)">
+                <template v-for="season in group.seasons" :key="season.key">
+                  <tr v-if="group.hasSeasons" class="group-row">
+                    <td colspan="4" class="group-cell">
+                      <GroupPanel
+                        level="season"
+                        :title="seasonLabel(season)"
+                        :path="season.path"
+                        :expanded="isSeasonOpen(season.key)"
+                        :selectable="readyOf(season.items).length > 0"
+                        :checked="groupSelected(season.items)"
+                        :indeterminate="groupIndeterminate(season.items)"
+                        :check-label="`选择 ${group.title} ${seasonLabel(season)} 的可执行项`"
+                        :meta="seasonMeta(season)"
+                        :badges="groupBadges(season.items)"
+                        @toggle="toggleSeason(season.key)"
+                        @check="toggleItems(season.items)"
+                      />
+                    </td>
+                  </tr>
+
+                  <template v-if="!group.hasSeasons || isSeasonOpen(season.key)">
+                    <tr
+                      v-for="item in season.items"
+                      :key="item.file_id"
+                      :class="{ sel: item.status === 'conflict' }"
+                    >
+                      <td class="cb pl-4">
+                        <input
+                          type="checkbox"
+                          :checked="includeIds.includes(item.file_id)"
+                          :disabled="item.status !== 'ready'"
+                          :aria-label="`选择 ${item.original_name}`"
+                          @change="toggleInclude(item.file_id)"
+                        />
+                      </td>
+                      <td class="max-w-0">
+                        <DiffText :before="item.original_name" :after="item.new_name ?? '—'" />
+                      </td>
+                      <td><StatusTag :status="item.status" /></td>
+                      <td>
+                        <span
+                          class="block truncate text-[11.5px] text-faint"
+                          :title="item.reason ?? ''"
+                        >
+                          {{ item.reason ?? '—' }}
+                        </span>
+                      </td>
+                    </tr>
+                  </template>
+                </template>
+              </template>
             </tbody>
           </table>
         </div>
@@ -374,6 +500,7 @@ onBeforeUnmount(disconnect)
           v-model:page-size="pageSize"
           :total="total"
           :page-count="pageCount"
+          unit="组"
         />
       </section>
 

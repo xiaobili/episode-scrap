@@ -7,11 +7,15 @@ import AppIcon from '@/components/AppIcon.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import EpisodeMapper from '@/components/EpisodeMapper.vue'
 import ErrorBanner from '@/components/ErrorBanner.vue'
+import GroupPanel from '@/components/GroupPanel.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import Pager from '@/components/Pager.vue'
 import ShowCard from '@/components/ShowCard.vue'
 import SelectMenu from '@/components/SelectMenu.vue'
-import type { SlateRow } from '@/components/ui-types'
+import type { GroupBadge, SlateRow } from '@/components/ui-types'
+import { useFolderGroups } from '@/composables/useFolderGroups'
+import type { FolderGroup, SeasonFolderGroup } from '@/composables/useFolderGroups'
+import { useGroupExpansion } from '@/composables/useGroupExpansion'
 import { usePagination } from '@/composables/usePagination'
 import { useRecentSearches } from '@/composables/useRecentSearches'
 import { useToast } from '@/composables/useToast'
@@ -36,7 +40,15 @@ const matching = ref(false)
 const error = ref('')
 
 const parsedFiles = computed(() => store.parsedFiles)
-const { page, pageSize, total, pageCount, pageItems } = usePagination(parsedFiles)
+const { groups } = useFolderGroups(parsedFiles, {
+  getPath: (file) => file.source_ref,
+  getSourceType: (file) => file.source_type,
+  getOpenlistId: (file) => file.openlist_id,
+  getSize: (file) => file.size,
+  getName: (file) => file.original_name,
+})
+const { page, pageSize, total, pageCount, pageItems: pageGroups } = usePagination(groups)
+const { isShowOpen, isSeasonOpen, toggleShow, toggleSeason } = useGroupExpansion(groups)
 const providers = computed(() => store.providers)
 const configured = computed(
   () => providers.value.find((item) => item.name === provider.value)?.configured ?? false,
@@ -211,6 +223,55 @@ function toggle(fileId: number) {
   store.toggleSelected(fileId)
 }
 
+function groupSelected(items: MediaFile[]): boolean {
+  return items.length > 0 && items.every((file) => store.selectedSet.has(file.id))
+}
+
+function groupIndeterminate(items: MediaFile[]): boolean {
+  return !groupSelected(items) && items.some((file) => store.selectedSet.has(file.id))
+}
+
+function toggleItems(items: MediaFile[]) {
+  const ids = new Set(items.map((file) => file.id))
+  if (groupSelected(items)) {
+    store.setSelected(store.selectedIds.filter((id) => !ids.has(id)))
+  } else {
+    store.setSelected(Array.from(new Set([...store.selectedIds, ...ids])))
+  }
+}
+
+function groupBadges(items: MediaFile[]): GroupBadge[] {
+  let matched = 0
+  let review = 0
+  for (const file of items) {
+    const state = fileMatchState(file)
+    if (state === 'match') matched += 1
+    else if (state === 'review') review += 1
+  }
+  const badges: GroupBadge[] = []
+  if (matched) badges.push({ label: `${matched} MATCH`, tone: 'ok' })
+  if (review) badges.push({ label: `${review} REVIEW`, tone: 'warn' })
+  return badges
+}
+
+function folderMeta(group: FolderGroup<MediaFile>): string[] {
+  const parts = [`${group.items.length} 集`]
+  if (group.seasonCount > 0) parts.push(`${group.seasonCount} 季`)
+  return parts
+}
+
+function seasonMeta(season: SeasonFolderGroup<MediaFile>): string[] {
+  return [`${season.items.length} 集`]
+}
+
+function seasonLabel(season: SeasonFolderGroup<MediaFile>): string {
+  return season.direct ? '本目录' : season.name
+}
+
+function groupIndexLabel(index: number): string {
+  return String((page.value - 1) * pageSize.value + index + 1).padStart(2, '0')
+}
+
 onMounted(() => {
   const first = parsedFiles.value[0]?.parsed
   if (first?.title) query.value = first.title
@@ -296,32 +357,75 @@ onMounted(() => {
         </div>
 
         <div class="pick-list">
-          <label
-            v-for="file in pageItems"
-            :key="file.id"
-            class="pick-row"
-            :class="{ sel: store.selectedSet.has(file.id) }"
-          >
-            <input
-              type="checkbox"
-              :checked="store.selectedSet.has(file.id)"
-              :aria-label="`选择 ${file.original_name}`"
-              @change="toggle(file.id)"
+          <template v-for="(group, groupIndex) in pageGroups" :key="group.key">
+            <GroupPanel
+              level="folder"
+              :index="groupIndexLabel(groupIndex)"
+              :title="group.title"
+              :path="group.path"
+              :expanded="isShowOpen(group.key)"
+              selectable
+              :checked="groupSelected(group.items)"
+              :indeterminate="groupIndeterminate(group.items)"
+              :check-label="`选择 ${group.title} 的全部文件`"
+              :meta="folderMeta(group)"
+              :badges="groupBadges(group.items)"
+              @toggle="toggleShow(group.key)"
+              @check="toggleItems(group.items)"
             />
-            <span class="pick-main">
-              <b>
-                {{
-                  file.parsed?.episode != null
-                    ? `S${String(file.parsed.season ?? 1).padStart(2, '0')}E${String(file.parsed.episode).padStart(2, '0')}`
-                    : '未知集'
-                }}
-              </b>
-              <small>{{ file.parsed?.episode_title ?? file.parsed?.title ?? file.original_name }}</small>
-            </span>
-            <span v-if="fileMatchState(file) === 'match'" class="tag tag-ok">MATCH</span>
-            <span v-else-if="fileMatchState(file) === 'review'" class="tag tag-warn">REVIEW</span>
-            <span v-else class="tag tag-mute">待匹配</span>
-          </label>
+
+            <div v-if="isShowOpen(group.key)" class="group-body">
+              <template v-for="season in group.seasons" :key="season.key">
+                <GroupPanel
+                  v-if="group.hasSeasons"
+                  level="season"
+                  :title="seasonLabel(season)"
+                  :path="season.path"
+                  :expanded="isSeasonOpen(season.key)"
+                  selectable
+                  :checked="groupSelected(season.items)"
+                  :indeterminate="groupIndeterminate(season.items)"
+                  :check-label="`选择 ${group.title} ${seasonLabel(season)} 的全部文件`"
+                  :meta="seasonMeta(season)"
+                  :badges="groupBadges(season.items)"
+                  @toggle="toggleSeason(season.key)"
+                  @check="toggleItems(season.items)"
+                />
+
+                <div
+                  v-if="!group.hasSeasons || isSeasonOpen(season.key)"
+                  class="group-body"
+                >
+                  <label
+                    v-for="file in season.items"
+                    :key="file.id"
+                    class="pick-row"
+                    :class="{ sel: store.selectedSet.has(file.id) }"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="store.selectedSet.has(file.id)"
+                      :aria-label="`选择 ${file.original_name}`"
+                      @change="toggle(file.id)"
+                    />
+                    <span class="pick-main">
+                      <b>
+                        {{
+                          file.parsed?.episode != null
+                            ? `S${String(file.parsed.season ?? 1).padStart(2, '0')}E${String(file.parsed.episode).padStart(2, '0')}`
+                            : '未知集'
+                        }}
+                      </b>
+                      <small>{{ file.parsed?.episode_title ?? file.parsed?.title ?? file.original_name }}</small>
+                    </span>
+                    <span v-if="fileMatchState(file) === 'match'" class="tag tag-ok">MATCH</span>
+                    <span v-else-if="fileMatchState(file) === 'review'" class="tag tag-warn">REVIEW</span>
+                    <span v-else class="tag tag-mute">待匹配</span>
+                  </label>
+                </div>
+              </template>
+            </div>
+          </template>
         </div>
 
         <Pager

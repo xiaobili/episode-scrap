@@ -10,6 +10,7 @@ const props = withDefaults(
 )
 
 const paths: Record<string, string[]> = {
+  overview: ['M4 4h7v7H4z', 'M13 4h7v7h-7z', 'M4 13h7v7H4z', 'M13 13h7v7h-7z'],
   scan: ['M11 4a7 7 0 1 0 0 14 7 7 0 1 0 0-14', 'M21 21l-4.3-4.3'],
   parse: ['M4 6h16', 'M4 12h10', 'M4 18h13'],
   scrape: ['M12 3l2.4 5.2 5.6.7-4.1 3.9 1.1 5.6L12 15.8 7 18.4l1.1-5.6L4 8.9l5.6-.7z'],

@@ -4,6 +4,12 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
+      path: '/overview',
+      name: 'overview',
+      component: () => import('@/views/OverviewView.vue'),
+      meta: { title: '概览' },
+    },
+    {
       path: '/',
       name: 'scan',
       component: () => import('@/views/ScanView.vue'),

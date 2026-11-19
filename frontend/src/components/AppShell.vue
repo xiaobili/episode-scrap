@@ -111,7 +111,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 <template>
   <div class="app">
     <header class="topbar">
-      <button class="brand" aria-label="EpisodeScrap 首页" @click="navigate('scan')">
+      <button class="brand" aria-label="EpisodeScrap 概览" @click="navigate('overview')">
         <span class="reel"><BrandMark /></span>
         <span class="brand-text">
           <span class="brand-name">EPISODE<span>SCRAP</span></span>
@@ -143,6 +143,21 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
     </header>
 
     <aside class="rail">
+      <button
+        class="rail-link rail-overview"
+        :class="{ on: route.name === 'overview' }"
+        aria-label="概览"
+        title="概览"
+        @click="navigate('overview')"
+      >
+        <AppIcon name="overview" :size="16" />
+        <span class="rail-ov-copy">
+          <b>概览</b>
+          <small>OVERVIEW</small>
+        </span>
+        <em>{{ store.files.length }}</em>
+      </button>
+
       <div class="rail-label">WORKFLOW / 工作流</div>
       <nav class="steps">
         <button

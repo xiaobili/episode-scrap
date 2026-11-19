@@ -13,4 +13,11 @@ export interface StatItem {
   tone?: SlateTone
 }
 
+export type BadgeTone = 'ok' | 'warn' | 'bad' | 'info' | 'mute' | 'amber'
+
+export interface GroupBadge {
+  label: string
+  tone?: BadgeTone
+}
+
 export type SegValue = string | number

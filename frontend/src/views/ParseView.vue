@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
 import ConfidenceGauge from '@/components/ConfidenceGauge.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorBanner from '@/components/ErrorBanner.vue'
+import GroupPanel from '@/components/GroupPanel.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import Pager from '@/components/Pager.vue'
-import type { SlateRow } from '@/components/ui-types'
+import type { GroupBadge, SlateRow } from '@/components/ui-types'
+import { useFolderGroups } from '@/composables/useFolderGroups'
+import type { FolderGroup, SeasonFolderGroup } from '@/composables/useFolderGroups'
+import { useGroupExpansion } from '@/composables/useGroupExpansion'
 import { usePagination } from '@/composables/usePagination'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -92,21 +96,66 @@ const filtered = computed(() => {
 const active = computed(() => files.value.find((file) => file.id === activeId.value) ?? null)
 const activeIndex = computed(() => filtered.value.findIndex((file) => file.id === activeId.value))
 
-const { page, pageSize, total, pageCount, pageItems } = usePagination(filtered)
+const { groups } = useFolderGroups(filtered, {
+  getPath: (file) => file.source_ref,
+  getSourceType: (file) => file.source_type,
+  getOpenlistId: (file) => file.openlist_id,
+  getSize: (file) => file.size,
+  getName: (file) => file.original_name,
+})
+
+const { page, pageSize, total, pageCount, pageItems: pageGroups } = usePagination(groups)
+const { isShowOpen, isSeasonOpen, toggleShow, toggleSeason, expandPath } =
+  useGroupExpansion(groups)
+
+const rollEl = ref<HTMLElement | null>(null)
+
+function locate(fileId: number | null) {
+  if (fileId === null) return null
+  for (const group of groups.value) {
+    const season = group.seasons.find((item) =>
+      item.items.some((file) => file.id === fileId),
+    )
+    if (season) return { showKey: group.key, seasonKey: season.key }
+  }
+  return null
+}
+
+function firstFileOf(list: { items: MediaFile[] }[]): MediaFile | null {
+  return list[0]?.items[0] ?? null
+}
 
 watch(filter, () => {
   page.value = 1
 })
 
 watch(activeId, () => {
-  const index = filtered.value.findIndex((file) => file.id === activeId.value)
+  const location = locate(activeId.value)
+  if (!location) return
+
+  expandPath(location.showKey, location.seasonKey)
+  const index = groups.value.findIndex((group) => group.key === location.showKey)
   if (index >= 0) page.value = Math.floor(index / pageSize.value) + 1
+
+  void nextTick(() => {
+    rollEl.value
+      ?.querySelector<HTMLElement>(`[data-file-id="${activeId.value}"]`)
+      ?.scrollIntoView({ block: 'nearest' })
+  })
 })
 
 watch(page, () => {
-  if (!pageItems.value.some((file) => file.id === activeId.value) && pageItems.value[0]) {
-    activeId.value = pageItems.value[0].id
-  }
+  const visible = pageGroups.value.some((group) =>
+    group.items.some((file) => file.id === activeId.value),
+  )
+  if (visible) return
+  const first = firstFileOf(pageGroups.value)
+  if (first) activeId.value = first.id
+})
+
+watch(groups, () => {
+  const location = locate(activeId.value)
+  if (location) expandPath(location.showKey, location.seasonKey)
 })
 
 const titleInvalid = computed(() => !draft.value.title.trim())
@@ -274,6 +323,45 @@ function dotClass(file: MediaFile) {
   return 'bad'
 }
 
+function groupMeta(items: MediaFile[]): string[] {
+  const parsed = items.filter((file) => file.parsed)
+  const parts = [`${items.length} 文件`]
+  if (parsed.length) {
+    const avg = Math.round(
+      parsed.reduce((sum, file) => sum + file.confidence, 0) / parsed.length,
+    )
+    parts.push(`AVG ${avg}%`)
+  }
+  return parts
+}
+
+function folderMeta(group: FolderGroup<MediaFile>): string[] {
+  const parts = groupMeta(group.items)
+  if (group.seasonCount > 0) parts.push(`${group.seasonCount} 季`)
+  return parts
+}
+
+function seasonMeta(season: SeasonFolderGroup<MediaFile>): string[] {
+  return groupMeta(season.items)
+}
+
+function groupBadges(items: MediaFile[]): GroupBadge[] {
+  const review = items.filter(needsReview).length
+  const unparsed = items.filter((file) => !file.parsed).length
+  const badges: GroupBadge[] = []
+  if (review) badges.push({ label: `${review} 待确认`, tone: 'warn' })
+  if (unparsed) badges.push({ label: `${unparsed} 未解析`, tone: 'bad' })
+  return badges
+}
+
+function seasonLabel(season: SeasonFolderGroup<MediaFile>): string {
+  return season.direct ? '本目录' : season.name
+}
+
+function groupIndexLabel(index: number): string {
+  return String((page.value - 1) * pageSize.value + index + 1).padStart(2, '0')
+}
+
 function onKeydown(event: KeyboardEvent) {
   const target = event.target as HTMLElement | null
   if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return
@@ -355,21 +443,55 @@ const tabs: { key: FilterKey; label: string }[] = [
           </button>
         </div>
 
-        <div class="roll">
-          <button
-            v-for="file in pageItems"
-            :key="file.id"
-            class="roll-item"
-            :class="{ on: file.id === activeId }"
-            @click="activeId = file.id"
-          >
-            <span class="dot" :class="dotClass(file)" />
-            <span class="roll-main">
-              <b>{{ episodeLabel(file) }}</b>
-              <small>{{ file.parsed?.title ?? '未解析' }}</small>
-            </span>
-            <span class="conf">{{ file.parsed ? `${file.confidence}%` : '未解析' }}</span>
-          </button>
+        <div ref="rollEl" class="roll">
+          <template v-for="(group, groupIndex) in pageGroups" :key="group.key">
+            <GroupPanel
+              level="folder"
+              :index="groupIndexLabel(groupIndex)"
+              :title="group.title"
+              :path="group.path"
+              :expanded="isShowOpen(group.key)"
+              :meta="folderMeta(group)"
+              :badges="groupBadges(group.items)"
+              @toggle="toggleShow(group.key)"
+            />
+
+            <div v-if="isShowOpen(group.key)" class="group-body">
+              <template v-for="season in group.seasons" :key="season.key">
+                <GroupPanel
+                  v-if="group.hasSeasons"
+                  level="season"
+                  :title="seasonLabel(season)"
+                  :path="season.path"
+                  :expanded="isSeasonOpen(season.key)"
+                  :meta="seasonMeta(season)"
+                  :badges="groupBadges(season.items)"
+                  @toggle="toggleSeason(season.key)"
+                />
+
+                <div
+                  v-if="!group.hasSeasons || isSeasonOpen(season.key)"
+                  class="group-body"
+                >
+                  <button
+                    v-for="file in season.items"
+                    :key="file.id"
+                    class="roll-item"
+                    :class="{ on: file.id === activeId }"
+                    :data-file-id="file.id"
+                    @click="activeId = file.id"
+                  >
+                    <span class="dot" :class="dotClass(file)" />
+                    <span class="roll-main">
+                      <b>{{ episodeLabel(file) }}</b>
+                      <small>{{ file.parsed?.title ?? '未解析' }}</small>
+                    </span>
+                    <span class="conf">{{ file.parsed ? `${file.confidence}%` : '未解析' }}</span>
+                  </button>
+                </div>
+              </template>
+            </div>
+          </template>
 
           <p v-if="filtered.length === 0" class="py-10 text-center text-xs text-faint">
             该筛选下暂无文件
@@ -386,6 +508,7 @@ const tabs: { key: FilterKey; label: string }[] = [
           v-model:page-size="pageSize"
           :total="total"
           :page-count="pageCount"
+          compact
         />
       </section>
 

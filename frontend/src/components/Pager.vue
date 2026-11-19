@@ -12,8 +12,9 @@ const props = withDefaults(
     pageSize: number
     pageSizes?: number[]
     compact?: boolean
+    unit?: string
   }>(),
-  { pageSizes: () => [10, 20, 50, 100], compact: false },
+  { pageSizes: () => [10, 20, 50, 100], compact: false, unit: '条' },
 )
 
 const emit = defineEmits<{
@@ -69,12 +70,13 @@ function go(page: number | null) {
 
     <template v-else>
       <span>
-        共 <b class="text-ink">{{ total }}</b> 条 · 第 {{ page }} / {{ pageCount }} 页
+        共 <b class="text-ink">{{ total }}</b> {{ unit }} · 第 {{ page }} / {{ pageCount }} 页
       </span>
 
       <label class="flex items-center gap-1.5">
         每页
         <SelectMenu v-model="pageSizeValue" class="h-7 !w-auto text-xs" :options="sizeOptions" />
+        {{ unit }}
       </label>
 
       <div class="pager ml-auto">

@@ -15,6 +15,7 @@ import SelectMenu from '@/components/SelectMenu.vue'
 import StatStrip from '@/components/StatStrip.vue'
 import ToggleSwitch from '@/components/ToggleSwitch.vue'
 import type { SlateRow, StatItem } from '@/components/ui-types'
+import { useFolderGroups } from '@/composables/useFolderGroups'
 import { usePagination } from '@/composables/usePagination'
 import { useToast } from '@/composables/useToast'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -83,8 +84,16 @@ function chipLabel(file: MediaFile): string {
   return `S${String(parsed.season ?? 1).padStart(2, '0')}E${String(parsed.episode).padStart(2, '0')}`
 }
 
+const { groups } = useFolderGroups(visibleFiles, {
+  getPath: (file) => file.source_ref,
+  getSourceType: (file) => file.source_type,
+  getOpenlistId: (file) => file.openlist_id,
+  getSize: (file) => file.size,
+  getName: (file) => file.original_name,
+})
+
 const { page, pageSize, total, pageCount, pageItems, rangeStart, rangeEnd } =
-  usePagination(visibleFiles)
+  usePagination(groups)
 
 watch([keyword, onlyVideo], () => {
   page.value = 1
@@ -214,7 +223,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
       <div class="table-toolbar">
         <div class="toolbar-title">
           <span>FILE INDEX</span>
-          <b>{{ rangeStart }}–{{ rangeEnd }} / {{ total }}</b>
+          <b>{{ rangeStart }}–{{ rangeEnd }} / {{ total }} 组</b>
           <span v-if="!store.scanning && visibleFiles.length" class="tag tag-ok">SCAN OK</span>
         </div>
         <div class="toolbar-right">
@@ -237,9 +246,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
       <FileTable
         v-else-if="visibleFiles.length"
-        :files="pageItems"
+        :groups="pageItems"
         :all-files="visibleFiles"
         :selected="store.selectedIds"
+        :group-start="(page - 1) * pageSize"
         show-parsed
         show-source
         @update:selected="store.setSelected"
@@ -271,6 +281,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
         v-model:page-size="pageSize"
         :total="total"
         :page-count="pageCount"
+        unit="组"
       />
     </section>
 
